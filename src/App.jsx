@@ -2,6 +2,13 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Activity, Users, ChevronRight, Plus, Check, AlertCircle, TrendingUp, TrendingDown, Minus, X, ArrowLeft, FileText, Filter } from 'lucide-react';
 
 // ============================================================
+// Demo configuration
+// Change FEEDBACK_EMAIL to your real address before sending to testers.
+// ============================================================
+const FEEDBACK_EMAIL = 'feedback@example.com';
+const DEMO_VERSION = 'v0.4';
+
+// ============================================================
 // Storage helpers - persistent across sessions
 // ============================================================
 const storage = {
@@ -142,17 +149,86 @@ const TEST_CATALOG = [
   { key: 'nordic',    name: 'Nordic hamstring',     cat: 'Strength',unit: 'N',      better: 'higher', brief: 'Eccentric knee flexor strength. NordBord or load cell. <256N flagged as elevated risk.' },
   { key: 'imtp',      name: 'Isometric mid-thigh pull', cat: 'Strength', unit: 'N', better: 'higher', brief: 'Maximal isometric force. Force plate required.' },
   { key: 'iso_add',   name: 'Isometric adductor',   cat: 'Strength',unit: 'N',      better: 'higher', brief: 'Hip adductor strength. ForceFrame or sphygmomanometer. Asymmetry flagged for groin risk.' },
+  { key: 'iso_abd',   name: 'Isometric abductor',   cat: 'Strength',unit: 'N',      better: 'higher', brief: 'Hip abductor strength. Often paired with adductor for adductor:abductor ratio (>0.9 is healthy).' },
+  // ----- Barbell lifts (1RM) -----
+  { key: 'sq_1rm',    name: 'Back squat 1RM',       cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'One-rep maximum. Below parallel. Belt allowed; suit/wraps not.' },
+  { key: 'sq_3rm',    name: 'Back squat 3RM',       cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Three-rep max. Common in-season test — lower CNS demand than 1RM.' },
+  { key: 'sq_5rm',    name: 'Back squat 5RM',       cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Five-rep max. Estimates 1RM at ~87% (Epley/Brzycki).' },
+  { key: 'fsq_1rm',   name: 'Front squat 1RM',      cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Anterior load. Typically 80–85% of back squat 1RM.' },
+  { key: 'dl_1rm',    name: 'Deadlift 1RM',         cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Conventional or sumo. Touch-and-go or dead stop, record technique.' },
+  { key: 'dl_3rm',    name: 'Deadlift 3RM',         cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Three-rep max. Same setup as 1RM.' },
+  { key: 'dl_5rm',    name: 'Deadlift 5RM',         cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Five-rep max. Lower spinal load than 1RM testing.' },
+  { key: 'rdl_5rm',   name: 'Romanian DL 5RM',      cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Hip-hinge variant. Posterior chain emphasis.' },
+  { key: 'tb_dl',     name: 'Trap-bar DL 1RM',      cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Hex/trap bar. Reduced lumbar shear vs conventional.' },
+  { key: 'bp_1rm',    name: 'Bench press 1RM',      cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Touch-and-pause on chest. Feet flat, hips on bench.' },
+  { key: 'bp_3rm',    name: 'Bench press 3RM',      cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Three-rep max. Common in-season test.' },
+  { key: 'bp_5rm',    name: 'Bench press 5RM',      cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Five-rep max. Estimates 1RM at ~87%.' },
+  { key: 'inc_bp_1rm',name: 'Incline bench 1RM',    cat: 'Strength',unit: 'kg',     better: 'higher', brief: '30–45° incline. Upper-pec emphasis.' },
+  { key: 'ohp_1rm',   name: 'Overhead press 1RM',   cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Strict press. No leg drive.' },
+  { key: 'push_press',name: 'Push press 1RM',       cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Leg drive permitted, no re-bend at lockout.' },
+  { key: 'pc_1rm',    name: 'Power clean 1RM',      cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Catch above parallel. Fast pull from floor.' },
+  { key: 'hp_clean',  name: 'Hang power clean 1RM', cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Hang start at mid-thigh. Hip-explosion focus.' },
+  { key: 'snatch_1rm',name: 'Snatch 1RM',           cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Full or power. Highly technical.' },
+  // ----- Bodyweight strength -----
+  { key: 'pullup_max',name: 'Pull-ups (max reps)',  cat: 'Strength',unit: 'reps',   better: 'higher', brief: 'Strict, dead hang, chin over bar. Bodyweight.' },
+  { key: 'pullup_wt', name: 'Weighted pull-up 1RM', cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Added load via belt. Record load excluding bodyweight.' },
+  { key: 'chinup_max',name: 'Chin-ups (max reps)',  cat: 'Strength',unit: 'reps',   better: 'higher', brief: 'Supinated grip, strict.' },
+  { key: 'dip_max',   name: 'Dips (max reps)',      cat: 'Strength',unit: 'reps',   better: 'higher', brief: 'Bodyweight, full ROM, shoulders below elbows at bottom.' },
+  { key: 'dip_wt',    name: 'Weighted dip 1RM',     cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Belt-loaded. Record added load.' },
+  { key: 'pushup_max',name: 'Push-ups in 60s',      cat: 'Strength',unit: 'reps',   better: 'higher', brief: 'Strict, chest to fist depth, 60s window.' },
+  // ----- Posterior chain endurance -----
+  { key: 'nordic',    name: 'Nordic hamstring max angle', cat: 'Strength', unit: '°',     better: 'higher', brief: 'Break-point angle on NordBord or supervised. Lower angle = stronger eccentric.' },
+  { key: 'nordic_force',name: 'Nordic peak force',  cat: 'Strength',unit: 'N',      better: 'higher', brief: 'NordBord peak eccentric hamstring force. Bilateral, asymmetry >15% flagged.' },
+  // ----- Isokinetic -----
+  { key: 'iso_quad',  name: 'Isokinetic quad 60°/s',cat: 'Strength',unit: 'Nm',     better: 'higher', brief: 'Peak torque concentric knee extension. Asymmetry >10–15% notable.' },
+  { key: 'iso_ham',   name: 'Isokinetic ham 60°/s', cat: 'Strength',unit: 'Nm',     better: 'higher', brief: 'Peak torque concentric knee flexion. H:Q ratio ≥0.6 typical target.' },
 
   // ===== BODY COMP =====
   { key: 'mass',      name: 'Body mass',            cat: 'Body comp',unit: 'kg',    better: 'neutral', brief: 'Morning, post-void.' },
   { key: 'height',    name: 'Standing height',      cat: 'Body comp',unit: 'cm',    better: 'neutral', brief: 'Stadiometer.' },
   { key: 'skinfolds', name: 'Sum of 7 skinfolds',   cat: 'Body comp',unit: 'mm',    better: 'lower',   brief: 'ISAK protocol. Triceps, subscapular, biceps, supraspinale, abdominal, thigh, calf.' },
+  { key: 'dexa_lbm',  name: 'DEXA lean mass',       cat: 'Body comp',unit: 'kg',    better: 'higher',  brief: 'Total lean tissue. Gold-standard composition measure.' },
+  { key: 'dexa_fm',   name: 'DEXA fat mass',        cat: 'Body comp',unit: 'kg',    better: 'lower',   brief: 'Total fat tissue. Track alongside lean mass changes.' },
+  { key: 'bia_pct',   name: 'BIA body fat %',       cat: 'Body comp',unit: '%',     better: 'lower',   brief: 'Bioimpedance estimate. Less accurate than DEXA but quick.' },
+  { key: 'waist',     name: 'Waist circumference',  cat: 'Body comp',unit: 'cm',    better: 'lower',   brief: 'Narrowest point between ribs and iliac crest.' },
+
+  // ===== CLINICAL (physio / allied health) =====
+  // ----- Calf / Achilles -----
+  { key: 'slhr_calf', name: 'Single-leg calf raise (max reps)', cat: 'Clinical', unit: 'reps',  better: 'higher', brief: 'Metronome at 60 bpm, knee straight, full height each rep, 10° incline. Hébert-Losier et al. — ~25 reps typical for healthy adults. Bilateral, asymmetry >5 reps notable.' },
+  { key: 'slhr_bent', name: 'Bent-knee calf raise (max reps)',  cat: 'Clinical', unit: 'reps',  better: 'higher', brief: 'Soleus-dominant variant. Knee bent to ~60°, 60 bpm metronome.' },
+  { key: 'silfverskiold', name: 'Silfverskiöld dorsiflexion (knee straight)', cat: 'Clinical', unit: '°', better: 'higher', brief: 'Ankle DF with knee extended. Compare to knee-flexed measure to isolate gastroc vs soleus tightness.' },
+  // ----- Knee / hip ROM -----
+  { key: 'thomas',    name: 'Modified Thomas test', cat: 'Clinical',unit: '°',      better: 'higher', brief: 'Hip extension passive ROM. Tests iliopsoas/rectus femoris tightness.' },
+  { key: 'ober',      name: 'Modified Ober test',   cat: 'Clinical',unit: '°',      better: 'higher', brief: 'ITB/TFL tightness. Side-lying, hip extended, leg lowered. Record adduction angle.' },
+  { key: 'sl_squat',  name: 'Single-leg squat depth', cat: 'Clinical',unit: '°',    better: 'higher', brief: 'Knee flexion at lowest point maintaining control. Asymmetry + knee valgus noted.' },
+  { key: 'navicular', name: 'Navicular drop',       cat: 'Clinical',unit: 'mm',     better: 'lower',   brief: 'Foot pronation measure. Difference between sit and stand navicular tuberosity height.' },
+  // ----- Hop battery (ACL RTS) -----
+  { key: 'sl_hop',    name: 'Single-leg hop for distance', cat: 'Clinical', unit: 'cm', better: 'higher', brief: 'Three trials each side. Limb symmetry index (LSI) ≥90% commonly used; 95–100% recommended for ACL RTS.' },
+  { key: 'triple_hop',name: 'Triple hop for distance',     cat: 'Clinical', unit: 'cm', better: 'higher', brief: 'Three consecutive hops, same leg. LSI ≥90% target.' },
+  { key: 'triple_x',  name: 'Triple crossover hop',        cat: 'Clinical', unit: 'cm', better: 'higher', brief: 'Three hops, crossing midline. Tests rotational control. LSI ≥90% target.' },
+  { key: 'hop_6m',    name: '6m timed hop',                cat: 'Clinical', unit: 's',  better: 'lower',  brief: 'Time to cover 6m on one leg. Requires timing gates for reliability.' },
+  { key: 'side_hop',  name: 'Side hop (30s)',              cat: 'Clinical', unit: 'reps', better: 'higher', brief: 'Reps over 30cm tape in 30s. Lateral knee stability + endurance.' },
+  // ----- Balance / movement screens -----
+  { key: 'yb_ant',    name: 'Y-balance anterior reach',    cat: 'Clinical', unit: '%',  better: 'higher', brief: 'Anterior reach distance as % leg length. <94% LSI = 2.5× injury risk (Plisky). Normal range 60–80% LL.' },
+  { key: 'yb_pm',     name: 'Y-balance posteromedial',     cat: 'Clinical', unit: '%',  better: 'higher', brief: 'PM reach % LL. Typically larger than anterior.' },
+  { key: 'yb_pl',     name: 'Y-balance posterolateral',    cat: 'Clinical', unit: '%',  better: 'higher', brief: 'PL reach % LL. Composite of three directions used overall.' },
+  { key: 'yb_comp',   name: 'Y-balance composite',         cat: 'Clinical', unit: '%',  better: 'higher', brief: 'Average of 3 directions / 3× leg length. Normal range 85–115% LL (age 10–18). 94% LSI composite for D1 athletes.' },
+  { key: 'sebt',      name: 'Star excursion balance',      cat: 'Clinical', unit: '%',  better: 'higher', brief: '8-direction reach % LL. Y-balance is a standardised subset (3 directions).' },
+  { key: 'fms',       name: 'FMS composite',               cat: 'Clinical', unit: '/21', better: 'higher', brief: '7 movement patterns × 0–3, max 21. ≤14 historically linked to elevated injury risk; modern use is corrective rather than predictive.' },
+  // ----- Joint laxity / general screens -----
+  { key: 'beighton',  name: 'Beighton hypermobility',      cat: 'Clinical', unit: '/9',  better: 'neutral', brief: '9-point hypermobility scale. ≥4 (women) or ≥6 (men) = generalised joint hypermobility.' },
+  { key: 'pain_vas',  name: 'Pain VAS (current)',          cat: 'Clinical', unit: '/10', better: 'lower',   brief: 'Visual analog scale. Worst pain in last 24h, current activity-specific.' },
+  // ----- Endurance / aerobic clinical -----
+  { key: 'plank',     name: 'Front plank (max hold)',      cat: 'Clinical', unit: 's',   better: 'higher',  brief: 'Forearm plank to failure. Trunk endurance.' },
+  { key: 'side_plank',name: 'Side plank (max hold)',       cat: 'Clinical', unit: 's',   better: 'higher',  brief: 'Lateral hip/oblique endurance. Bilateral, asymmetry noted.' },
+  { key: 'biering',   name: 'Biering-Sørensen back ext',   cat: 'Clinical', unit: 's',   better: 'higher',  brief: 'Prone trunk extension hold over plinth. <176s (men) / <198s (women) = elevated low back pain risk.' },
+  { key: 'mcg_neck',  name: 'McGill neck flexor endurance',cat: 'Clinical', unit: 's',   better: 'higher',  brief: 'Supine head-lift hold. Neck flexor stamina; relevant to whiplash/concussion rehab.' },
 
   // ===== CUSTOM =====
   { key: 'custom',    name: 'Custom test',          cat: 'Custom',  unit: '',       better: 'neutral', brief: 'Free-form. Define the unit and what counts as a good result inline.' }
 ];
 
-const TEST_CATEGORIES = ['Aerobic', 'Speed', 'Agility', 'Power', 'Strength', 'Body comp', 'Custom'];
+const TEST_CATEGORIES = ['Aerobic', 'Speed', 'Agility', 'Power', 'Strength', 'Body comp', 'Clinical', 'Custom'];
 
 const getTest = (key) => TEST_CATALOG.find(t => t.key === key) || TEST_CATALOG[TEST_CATALOG.length - 1];
 
@@ -1656,14 +1732,14 @@ function AthleteApp({ currentUser, demoAthleteId, auditLog, recordAudit, onSwitc
           <div style={styles.dualModeSwitcher}>
             <button style={{ ...styles.dualModeBtn, ...styles.dualModeBtnActive }}>
               <span style={styles.dualModeBtnIcon}>◐</span>
-              <div>
+              <div style={{ minWidth: 0, flex: 1 }}>
                 <div style={styles.dualModeBtnLabel}>My training</div>
-                <div style={styles.dualModeBtnSub}>Your own athlete profile</div>
+                <div style={styles.dualModeBtnSub}>Athlete view</div>
               </div>
             </button>
             <button onClick={onSwitchView} style={styles.dualModeBtn}>
               <span style={{ ...styles.dualModeBtnIcon, opacity: 0.5 }}>○</span>
-              <div>
+              <div style={{ minWidth: 0, flex: 1 }}>
                 <div style={styles.dualModeBtnLabel}>Practitioner</div>
                 <div style={styles.dualModeBtnSub}>{currentUser.title || ROLE_LABELS[currentUser.role]}</div>
               </div>
@@ -3438,7 +3514,7 @@ function TeamAccessScreen({ athletes, links, currentUser, onCreateLinks, onRevok
         </button>
       </div>
 
-      <div style={styles.pFilters}>
+      <div className="tempo-scroll-x" style={styles.pFilters}>
         <span style={styles.pFilterLabel}>Show</span>
         {[
           { k: 'all', l: `All (${userRows.length})` },
@@ -4383,16 +4459,16 @@ function PractitionerApp({ currentUser, auditLog, recordAudit, onSwitchView, onO
         <div style={styles.dualModeSwitcher}>
           <button style={{ ...styles.dualModeBtn, ...styles.dualModeBtnActive }}>
             <span style={styles.dualModeBtnIcon}>◐</span>
-            <div>
+            <div style={{ minWidth: 0, flex: 1 }}>
               <div style={styles.dualModeBtnLabel}>Practitioner</div>
               <div style={styles.dualModeBtnSub}>{currentUser.title || ROLE_LABELS[currentUser.role]}</div>
             </div>
           </button>
           <button onClick={onSwitchView} style={styles.dualModeBtn}>
             <span style={{ ...styles.dualModeBtnIcon, opacity: 0.5 }}>○</span>
-            <div>
+            <div style={{ minWidth: 0, flex: 1 }}>
               <div style={styles.dualModeBtnLabel}>My training</div>
-              <div style={styles.dualModeBtnSub}>Your own athlete profile</div>
+              <div style={styles.dualModeBtnSub}>Athlete view</div>
             </div>
           </button>
         </div>
@@ -4444,7 +4520,7 @@ function PractitionerApp({ currentUser, auditLog, recordAudit, onSwitchView, onO
       </div>
 
       {/* Filters */}
-      <div style={styles.pFilters}>
+      <div className="tempo-scroll-x" style={styles.pFilters}>
         <span style={styles.pFilterLabel}>Show</span>
         {[
           { k: 'all', l: 'All' },
@@ -4994,6 +5070,7 @@ function PerformanceTeamView({ athletes, perfData, onPickAthlete }) {
         <TestingTeamSection
           tests={tests}
           athletes={athletes}
+          perfData={perfData}
           onPickAthlete={onPickAthlete}
         />
       )}
@@ -5037,7 +5114,7 @@ function InjuriesTeamSection({ injuries, athletes, onPickAthlete }) {
 
   return (
     <div style={styles.perfPanel}>
-      <div style={styles.pFilters}>
+      <div className="tempo-scroll-x" style={styles.pFilters}>
         <span style={styles.pFilterLabel}>Show</span>
         {[{ k: 'open', l: 'Open' }, { k: 'returned', l: 'Returned' }, { k: 'all', l: 'All' }].map(f => (
           <button key={f.k} onClick={() => setFilter(f.k)}
@@ -5115,9 +5192,11 @@ const formatTestValue = (num, unit) => {
   return num.toFixed(num < 10 ? 2 : 1);
 };
 
-function TestingTeamSection({ tests, athletes, onPickAthlete }) {
+function TestingTeamSection({ tests, athletes, perfData, onPickAthlete }) {
   const [category, setCategory] = useState('all');
   const [selectedTestKey, setSelectedTestKey] = useState(null);
+  const [showBulkSession, setShowBulkSession] = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
 
   // Filter by category
   const filteredTests = tests.filter(t => {
@@ -5169,6 +5248,34 @@ function TestingTeamSection({ tests, athletes, onPickAthlete }) {
     return a.meta.name.localeCompare(b.meta.name);
   });
 
+  // If upload mode is open, show that
+  if (showUpload) {
+    return (
+      <TestingUploadSection
+        athletes={athletes}
+        onSave={(results) => {
+          results.forEach(r => perfData.addTest(r));
+          setShowUpload(false);
+        }}
+        onCancel={() => setShowUpload(false)}
+      />
+    );
+  }
+
+  // If bulk-entry session is open, show that
+  if (showBulkSession) {
+    return (
+      <BulkTestingSession
+        athletes={athletes}
+        onSave={(results) => {
+          results.forEach(r => perfData.addTest(r));
+          setShowBulkSession(false);
+        }}
+        onCancel={() => setShowBulkSession(false)}
+      />
+    );
+  }
+
   // If a test is selected, show the drill-down
   if (selectedTestKey) {
     const item = summary.find(s => s.testKey === selectedTestKey);
@@ -5186,7 +5293,23 @@ function TestingTeamSection({ tests, athletes, onPickAthlete }) {
 
   return (
     <div style={styles.perfPanel}>
-      <div style={styles.pFilters}>
+      {/* Primary actions — live entry + bulk CSV import */}
+      <div style={styles.testingActionRow}>
+        <button
+          style={styles.testingActionPrimary}
+          onClick={() => setShowBulkSession(true)}
+        >
+          + Record testing session
+        </button>
+        <button
+          style={styles.testingActionSecondary}
+          onClick={() => setShowUpload(true)}
+        >
+          ↑ Upload CSV
+        </button>
+      </div>
+
+      <div className="tempo-scroll-x" style={{ ...styles.pFilters, marginTop: 14 }}>
         <span style={styles.pFilterLabel}>Filter</span>
         <button onClick={() => setCategory('all')}
           style={{ ...styles.pFilterBtn, ...(category === 'all' ? styles.pFilterBtnActive : {}) }}>
@@ -5250,6 +5373,685 @@ function TestingTeamSection({ tests, athletes, onPickAthlete }) {
     </div>
   );
 }
+
+
+// ============================================================
+// BulkTestingSession — record results for many athletes at once
+// One test, one date, many athlete results.
+// ============================================================
+function BulkTestingSession({ athletes, onSave, onCancel }) {
+  const [step, setStep] = useState('pickTest'); // pickTest | enterResults
+  const [testKey, setTestKey] = useState(null);
+  const [sessionDate, setSessionDate] = useState(today());
+  const [results, setResults] = useState({}); // athleteId → { value, side?, note? }
+  const [sessionNote, setSessionNote] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Filter by category + search query
+  const normalisedQuery = searchQuery.trim().toLowerCase();
+  const filteredKeys = TEST_CATALOG
+    .filter(t => t.cat !== 'Custom') // hide custom from picker by default
+    .filter(t => categoryFilter === 'all' || t.cat === categoryFilter)
+    .filter(t => {
+      if (!normalisedQuery) return true;
+      return t.name.toLowerCase().includes(normalisedQuery)
+          || t.cat.toLowerCase().includes(normalisedQuery)
+          || (t.brief && t.brief.toLowerCase().includes(normalisedQuery));
+    })
+    .map(t => t.key);
+
+  const test = testKey ? getTest(testKey) : null;
+  // Bilateral tests need separate L/R inputs. Detect by name pattern —
+  // Nordic, single-leg variants, isokinetic, etc. typically need both sides.
+  const isBilateral = test && /nordic|single[- ]?leg|isokinetic|\bsl\b/i.test(test.name);
+
+  // ===== Step 1: pick a test =====
+  if (step === 'pickTest') {
+    return (
+      <div style={styles.pFrame}>
+        <header style={styles.pHeader}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button onClick={onCancel} style={styles.pBackBtn}>
+              <X size={16} />
+            </button>
+            <div>
+              <div style={styles.pHeaderKicker}>Step 1 of 2</div>
+              <div style={styles.pOrgName}>Pick a test</div>
+            </div>
+          </div>
+        </header>
+
+        <p style={styles.aFilesIntro}>
+          Choose which test you're running. You'll enter results for each athlete in the next step.
+        </p>
+
+        {/* Search field */}
+        <div style={styles.testSearchWrap}>
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search tests by name, category, or description…"
+            style={styles.testSearchInput}
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              style={styles.testSearchClear}
+              aria-label="Clear search"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+
+        <div className="tempo-scroll-x" style={{ ...styles.pFilters, marginBottom: 14 }}>
+          <span style={styles.pFilterLabel}>Filter</span>
+          <button onClick={() => setCategoryFilter('all')}
+            style={{ ...styles.pFilterBtn, ...(categoryFilter === 'all' ? styles.pFilterBtnActive : {}) }}>
+            All
+          </button>
+          {TEST_CATEGORIES.filter(c => c !== 'Custom').map(c => (
+            <button key={c} onClick={() => setCategoryFilter(c)}
+              style={{ ...styles.pFilterBtn, ...(categoryFilter === c ? styles.pFilterBtnActive : {}) }}>
+              {c}
+            </button>
+          ))}
+        </div>
+
+        {filteredKeys.length === 0 && (
+          <div style={styles.testSearchEmpty}>
+            No tests match "{searchQuery}". Try a different term or category.
+          </div>
+        )}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {filteredKeys.map(key => {
+            const t = getTest(key);
+            const isSelected = testKey === key;
+            return (
+              <button
+                key={key}
+                onClick={() => setTestKey(key)}
+                style={{
+                  ...styles.identityPick,
+                  ...(isSelected ? styles.identityPickActive : {})
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+                  <div style={styles.identityName}>{t.name}</div>
+                  <div style={styles.identityMeta}>
+                    {t.cat} · measured in {t.unit}
+                    {t.better === 'lower' ? ' · lower is better' : ' · higher is better'}
+                  </div>
+                  {t.brief && (
+                    <div style={styles.identityScope}>{t.brief}</div>
+                  )}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div style={styles.inviteActions}>
+          <button style={styles.perfCancelBtn} onClick={onCancel}>Cancel</button>
+          <button
+            style={{ ...styles.perfSaveBtn, opacity: testKey ? 1 : 0.4 }}
+            disabled={!testKey}
+            onClick={() => setStep('enterResults')}
+          >
+            Continue
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ===== Step 2: enter results per athlete =====
+  const updateResult = (athleteId, field, value) => {
+    setResults({
+      ...results,
+      [athleteId]: { ...results[athleteId], [field]: value }
+    });
+  };
+
+  const handleSave = () => {
+    const records = [];
+    Object.entries(results).forEach(([athleteId, r]) => {
+      // Only save athletes that have a value entered
+      if (!r || r.value === undefined || r.value === '' || r.value === null) return;
+      const numericValue = parseFloat(r.value);
+      if (Number.isNaN(numericValue)) return;
+      // Bilateral tests (e.g. Nordic, isokinetic) — save L and R as separate records
+      if (isBilateral && r.valueR !== undefined && r.valueR !== '' && r.valueR !== null) {
+        records.push({
+          id: `t_${Date.now()}_${athleteId}_L`,
+          athleteId,
+          testKey,
+          date: sessionDate,
+          value: numericValue,
+          side: 'L',
+          note: sessionNote || ''
+        });
+        records.push({
+          id: `t_${Date.now()}_${athleteId}_R`,
+          athleteId,
+          testKey,
+          date: sessionDate,
+          value: parseFloat(r.valueR),
+          side: 'R',
+          note: sessionNote || ''
+        });
+      } else {
+        records.push({
+          id: `t_${Date.now()}_${athleteId}`,
+          athleteId,
+          testKey,
+          date: sessionDate,
+          value: numericValue,
+          note: sessionNote || ''
+        });
+      }
+    });
+    onSave(records);
+  };
+
+  const enteredCount = Object.values(results).filter(r =>
+    r && r.value !== undefined && r.value !== '' && r.value !== null
+  ).length;
+
+  return (
+    <div style={styles.pFrame}>
+      <header style={styles.pHeader}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button onClick={() => setStep('pickTest')} style={styles.pBackBtn}>
+            <ArrowLeft size={16} />
+          </button>
+          <div>
+            <div style={styles.pHeaderKicker}>Step 2 of 2</div>
+            <div style={styles.pOrgName}>{test.name}</div>
+          </div>
+        </div>
+      </header>
+
+      {/* Session metadata */}
+      <div style={styles.perfPanel}>
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 140 }}>
+            <div style={styles.perfFormLabel}>Date</div>
+            <input
+              type="date"
+              style={styles.perfInput}
+              value={sessionDate}
+              onChange={e => setSessionDate(e.target.value)}
+            />
+          </div>
+          <div style={{ flex: 2, minWidth: 200 }}>
+            <div style={styles.perfFormLabel}>Session note (optional)</div>
+            <input
+              style={styles.perfInput}
+              value={sessionNote}
+              onChange={e => setSessionNote(e.target.value)}
+              placeholder="e.g. Pre-season, indoor"
+            />
+          </div>
+        </div>
+
+        <div style={styles.bulkTestHint}>
+          Enter {test.unit} per athlete. Skip anyone who didn't test — only entered results get saved.
+          {isBilateral && ' For bilateral tests, enter L and R values separately.'}
+        </div>
+      </div>
+
+      {/* Per-athlete inputs */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 14 }}>
+        {athletes.map(a => {
+          const r = results[a.id] || {};
+          const initial = a.name.split(' ').map(p => p[0]).slice(0, 2).join('');
+          return (
+            <div key={a.id} style={styles.bulkTestRow}>
+              <div style={styles.bulkTestAvatar}>{initial}</div>
+              <div style={styles.bulkTestNameCol}>
+                <div style={styles.bulkTestName}>{a.name}</div>
+                <div style={styles.bulkTestMeta}>{a.position}{a.playerId ? ` · ${a.playerId}` : ''}</div>
+              </div>
+              {isBilateral ? (
+                <div style={styles.bulkTestInputCol}>
+                  <div style={styles.bulkTestBilateralRow}>
+                    <input
+                      type="number"
+                      step="any"
+                      style={styles.bulkTestInputSmall}
+                      placeholder="L"
+                      value={r.value || ''}
+                      onChange={e => updateResult(a.id, 'value', e.target.value)}
+                    />
+                    <input
+                      type="number"
+                      step="any"
+                      style={styles.bulkTestInputSmall}
+                      placeholder="R"
+                      value={r.valueR || ''}
+                      onChange={e => updateResult(a.id, 'valueR', e.target.value)}
+                    />
+                  </div>
+                  <div style={styles.bulkTestUnit}>{test.unit}</div>
+                </div>
+              ) : (
+                <div style={styles.bulkTestInputCol}>
+                  <input
+                    type="number"
+                    step="any"
+                    style={styles.bulkTestInput}
+                    placeholder="—"
+                    value={r.value || ''}
+                    onChange={e => updateResult(a.id, 'value', e.target.value)}
+                  />
+                  <div style={styles.bulkTestUnit}>{test.unit}</div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={styles.inviteActions}>
+        <button style={styles.perfCancelBtn} onClick={onCancel}>Cancel</button>
+        <button
+          style={{ ...styles.perfSaveBtn, opacity: enteredCount > 0 ? 1 : 0.4 }}
+          disabled={enteredCount === 0}
+          onClick={handleSave}
+        >
+          Save {enteredCount} {enteredCount === 1 ? 'result' : 'results'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
+// ============================================================
+// TestingUploadSection — CSV import for testing data
+// Athletes do their own thing for fitness data; this is a club-side
+// bulk importer for test results that already live in a spreadsheet.
+// ============================================================
+function TestingUploadSection({ athletes, onSave, onCancel }) {
+  const [csvText, setCsvText] = useState('');
+  const [parsedRows, setParsedRows] = useState(null); // null | array of {data, errors}
+  const fileInputRef = React.useRef(null);
+
+  // Build a lookup from name → athlete and playerId → athlete
+  const athleteByKey = useMemo(() => {
+    const m = {};
+    athletes.forEach(a => {
+      // Allow matching by id, playerId, or name (case-insensitive)
+      m[a.id.toLowerCase()] = a;
+      if (a.playerId) m[String(a.playerId).toLowerCase()] = a;
+      m[a.name.toLowerCase()] = a;
+    });
+    return m;
+  }, [athletes]);
+
+  // Build a lookup from test key/name → test
+  const testByKey = useMemo(() => {
+    const m = {};
+    TEST_CATALOG.forEach(t => {
+      m[t.key.toLowerCase()] = t;
+      m[t.name.toLowerCase()] = t;
+    });
+    return m;
+  }, []);
+
+  const parseCSV = (text) => {
+    // Simple CSV parser — handles quoted fields with commas, skips blank lines and # comments
+    const lines = text.split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('#'));
+    if (lines.length === 0) return [];
+
+    const parseLine = (line) => {
+      const out = [];
+      let cur = '';
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const c = line[i];
+        if (c === '"') {
+          if (inQuotes && line[i+1] === '"') { cur += '"'; i++; }
+          else inQuotes = !inQuotes;
+        } else if (c === ',' && !inQuotes) {
+          out.push(cur.trim());
+          cur = '';
+        } else {
+          cur += c;
+        }
+      }
+      out.push(cur.trim());
+      return out;
+    };
+
+    const headers = parseLine(lines[0]).map(h => h.toLowerCase().replace(/[\s_-]+/g, '_'));
+    return lines.slice(1).map((line, idx) => {
+      const cells = parseLine(line);
+      const row = {};
+      headers.forEach((h, i) => { row[h] = cells[i] || ''; });
+      row._rowNum = idx + 2; // CSV row number including header
+      return row;
+    });
+  };
+
+  const validateRows = (rows) => {
+    return rows.map(row => {
+      const errors = [];
+
+      // Find athlete (accept many possible column names)
+      const athleteKey = (row.athlete || row.athlete_name || row.name || row.athlete_id || row.player_id || row.playerid || '').toLowerCase();
+      const athlete = athleteByKey[athleteKey];
+      if (!athleteKey) errors.push('Missing "athlete" column (athlete name, ID, or player ID)');
+      else if (!athlete) errors.push(`Athlete "${row.athlete || row.athlete_name || row.name || row.athlete_id || athleteKey}" not found`);
+
+      // Find test (accept either friendly name or internal key)
+      const testKey = (row.test || row.test_name || row.test_key || '').toLowerCase();
+      const test = testByKey[testKey];
+      if (!testKey) errors.push('Missing "test" column (use the test name)');
+      else if (!test) errors.push(`Test "${row.test || row.test_name || row.test_key || testKey}" not found in catalog`);
+
+      // Validate date
+      const date = row.date;
+      if (!date) errors.push('Missing date column');
+      else if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) errors.push(`Date "${date}" must be in YYYY-MM-DD format`);
+
+      // Validate value
+      const value = parseFloat(row.value);
+      if (row.value === undefined || row.value === '') errors.push('Missing value column');
+      else if (Number.isNaN(value)) errors.push(`Value "${row.value}" is not a number`);
+
+      // Validate side if present
+      const side = row.side ? row.side.toUpperCase() : null;
+      if (side && side !== 'L' && side !== 'R') errors.push(`Side "${row.side}" must be L or R (or blank)`);
+
+      return {
+        rowNum: row._rowNum,
+        valid: errors.length === 0,
+        errors,
+        record: errors.length === 0 ? {
+          id: `t_csv_${Date.now()}_${row._rowNum}`,
+          athleteId: athlete.id,
+          testKey: test.key,
+          date,
+          value,
+          side: side || undefined,
+          note: row.note || ''
+        } : null
+      };
+    });
+  };
+
+  const handleParse = () => {
+    if (!csvText.trim()) return;
+    const rows = parseCSV(csvText);
+    const validated = validateRows(rows);
+    setParsedRows(validated);
+  };
+
+  const handleFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target.result;
+      setCsvText(text);
+      const rows = parseCSV(text);
+      const validated = validateRows(rows);
+      setParsedRows(validated);
+    };
+    reader.readAsText(file);
+  };
+
+  const downloadTemplate = () => {
+    // Build a friendly CSV that uses ATHLETE NAMES and TEST NAMES rather than
+    // internal IDs. The parser accepts either, but coaches think in names.
+    const sampleA = athletes[0];
+    const sampleB = athletes[1] || sampleA;
+    const sampleC = athletes[2] || sampleA;
+    const aName = sampleA?.name || 'Athlete name';
+    const bName = sampleB?.name || 'Athlete name';
+    const cName = sampleC?.name || 'Athlete name';
+    const todayStr = today();
+
+    // Group test names by category for the reference section
+    const categories = ['Aerobic', 'Speed', 'Agility', 'Power', 'Strength', 'Body comp', 'Clinical'];
+    const referenceLines = [];
+    referenceLines.push('');
+    referenceLines.push('# ============================================================');
+    referenceLines.push('# AVAILABLE TESTS — copy any name from below into the "test" column');
+    referenceLines.push('# ============================================================');
+    categories.forEach(cat => {
+      const inCat = TEST_CATALOG.filter(t => t.cat === cat);
+      if (inCat.length === 0) return;
+      referenceLines.push('');
+      referenceLines.push(`# --- ${cat} ---`);
+      inCat.forEach(t => {
+        referenceLines.push(`#   ${t.name}  (${t.unit})`);
+      });
+    });
+
+    const lines = [
+      '# TEMPO TESTING DATA TEMPLATE',
+      '#',
+      '# How to use this file:',
+      '# 1. Open in Excel, Google Sheets, or Numbers',
+      '# 2. Keep the header row (athlete,test,date,value,side,note)',
+      '# 3. Delete the example rows below and replace with your data',
+      '# 4. Save as CSV',
+      '# 5. Upload back into Tempo',
+      '#',
+      '# Tips:',
+      '#   - "athlete" = the full athlete name as shown in Tempo',
+      '#   - "test"    = the test name (full list at the bottom of this file)',
+      '#   - "date"    = YYYY-MM-DD format (e.g. 2026-05-20)',
+      '#   - "value"   = the result (just the number, no units)',
+      '#   - "side"    = L or R for bilateral tests (leave blank otherwise)',
+      '#   - "note"    = optional comment, like "pre-season" or "indoor"',
+      '#',
+      'athlete,test,date,value,side,note',
+      `${aName},Yo-Yo IR1,${todayStr},1840,,Pre-season`,
+      `${aName},Countermovement jump,${todayStr},38.2,,Force plate`,
+      `${aName},Nordic peak force,${todayStr},340,L,NordBord`,
+      `${aName},Nordic peak force,${todayStr},355,R,NordBord`,
+      `${bName},Back squat 1RM,${todayStr},145,,New PB`,
+      `${bName},Single-leg hop for distance,${todayStr},148,L,RTS battery`,
+      `${bName},Single-leg hop for distance,${todayStr},153,R,RTS battery`,
+      `${cName},20m sprint,${todayStr},2.94,,Timing gates`,
+      ...referenceLines
+    ];
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tempo-testing-template-${todayStr}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const validRecords = parsedRows
+    ? parsedRows.filter(r => r.valid).map(r => r.record)
+    : [];
+  const invalidCount = parsedRows
+    ? parsedRows.filter(r => !r.valid).length
+    : 0;
+
+  return (
+    <div style={styles.pFrame}>
+      <header style={styles.pHeader}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button onClick={onCancel} style={styles.pBackBtn}>
+            <ArrowLeft size={16} />
+          </button>
+          <div>
+            <div style={styles.pHeaderKicker}>Bulk import</div>
+            <div style={styles.pOrgName}>Upload testing data</div>
+          </div>
+        </div>
+      </header>
+
+      <p style={styles.aFilesIntro}>
+        Bring testing data in from a spreadsheet. Useful for backfilling historical results
+        or importing exports from devices like NordBord, ForceFrame, or Catapult.
+      </p>
+
+      {/* Easiest start: download the template */}
+      <div style={styles.testUploadHeroCard}>
+        <div style={styles.testUploadHeroLabel}>Easiest way to start</div>
+        <div style={styles.testUploadHeroTitle}>Download the template</div>
+        <p style={styles.testUploadHeroBody}>
+          It includes example rows so you can see the format, plus a list of every test name
+          available. Open it in Excel or Google Sheets, replace the examples with your data, save,
+          and upload below.
+        </p>
+        <button onClick={downloadTemplate} style={styles.testUploadHeroBtn}>
+          ↓ Download CSV template
+        </button>
+      </div>
+
+      {/* Quick reference for those skipping the template */}
+      <div style={styles.uploadFormatCard}>
+        <div style={styles.uploadFormatTitle}>Or build your own — quick reference</div>
+        <div style={styles.uploadFormatExample}>
+          <div style={styles.uploadFormatExampleHeader}>athlete,test,date,value,side,note</div>
+          <div style={styles.uploadFormatExampleRow}>
+            {athletes[0]?.name || 'Athlete name'},Yo-Yo IR1,{today()},1840,,Pre-season
+          </div>
+          <div style={styles.uploadFormatExampleRow}>
+            {athletes[0]?.name || 'Athlete name'},Nordic peak force,{today()},340,L,NordBord
+          </div>
+        </div>
+        <div style={styles.uploadFormatTips}>
+          <div style={styles.uploadFormatTip}>
+            <strong>athlete</strong> — the athlete's full name (case doesn't matter)
+          </div>
+          <div style={styles.uploadFormatTip}>
+            <strong>test</strong> — the test name (e.g. "Back squat 1RM"). Use the template for the full list.
+          </div>
+          <div style={styles.uploadFormatTip}>
+            <strong>date</strong> — YYYY-MM-DD format
+          </div>
+          <div style={styles.uploadFormatTip}>
+            <strong>value</strong> — just the number, no units
+          </div>
+          <div style={styles.uploadFormatTip}>
+            <strong>side</strong> — L or R for bilateral tests (Nordic, single-leg variants). Leave blank otherwise.
+          </div>
+          <div style={styles.uploadFormatTip}>
+            <strong>note</strong> — optional comment
+          </div>
+        </div>
+      </div>
+
+      {/* File input + paste area */}
+      <div style={styles.uploadInputCard}>
+        <div style={styles.uploadInputHead}>
+          <div style={styles.uploadInputLabel}>Choose a CSV file</div>
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv,text/csv"
+          onChange={handleFile}
+          style={{ fontSize: 13, fontFamily: 'inherit', marginBottom: 14 }}
+        />
+        <div style={styles.uploadInputDivider}>or paste CSV content below</div>
+        <textarea
+          value={csvText}
+          onChange={e => setCsvText(e.target.value)}
+          rows={6}
+          placeholder="athlete,test,date,value,side,note&#10;Tom Mercer,Yo-Yo IR1,2026-05-20,1840,,Pre-season"
+          style={styles.uploadTextarea}
+        />
+        <button
+          onClick={handleParse}
+          disabled={!csvText.trim()}
+          style={{
+            ...styles.uploadParseBtn,
+            opacity: csvText.trim() ? 1 : 0.4
+          }}
+        >
+          Validate & preview
+        </button>
+      </div>
+
+      {/* Preview */}
+      {parsedRows && (
+        <div style={styles.uploadPreviewCard}>
+          <div style={styles.uploadPreviewHead}>
+            <div>
+              <div style={styles.uploadPreviewTitle}>Preview</div>
+              <div style={styles.uploadPreviewMeta}>
+                {validRecords.length} valid · {invalidCount} {invalidCount === 1 ? 'error' : 'errors'}
+              </div>
+            </div>
+          </div>
+
+          {parsedRows.length === 0 ? (
+            <div style={styles.uploadPreviewEmpty}>
+              No rows found. Check that the CSV has a header row.
+            </div>
+          ) : (
+            <div style={styles.uploadPreviewList}>
+              {parsedRows.map((r, i) => (
+                <div
+                  key={i}
+                  style={{
+                    ...styles.testUploadRow,
+                    ...(r.valid ? {} : styles.testUploadRowInvalid)
+                  }}
+                >
+                  <div style={styles.testUploadRowNum}>
+                    Row {r.rowNum}
+                  </div>
+                  {r.valid ? (
+                    <div style={styles.testUploadRowOk}>
+                      <div style={styles.testUploadRowName}>
+                        {athletes.find(a => a.id === r.record.athleteId)?.name} ·{' '}
+                        {getTest(r.record.testKey).name}
+                      </div>
+                      <div style={styles.testUploadRowVal}>
+                        {r.record.value} {getTest(r.record.testKey).unit}
+                        {r.record.side ? ` (${r.record.side})` : ''}
+                        {' · '}{r.record.date}
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={styles.testUploadRowErr}>
+                      {r.errors.map((e, j) => (
+                        <div key={j} style={styles.testUploadErrText}>· {e}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div style={styles.inviteActions}>
+        <button style={styles.perfCancelBtn} onClick={onCancel}>Cancel</button>
+        <button
+          style={{
+            ...styles.perfSaveBtn,
+            opacity: validRecords.length > 0 ? 1 : 0.4
+          }}
+          disabled={validRecords.length === 0}
+          onClick={() => onSave(validRecords)}
+        >
+          Import {validRecords.length} {validRecords.length === 1 ? 'result' : 'results'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 
 // Drill-down view: list of athletes who took a specific test
 function TestDrillDown({ item, athletes, onBack, onPickAthlete }) {
@@ -5470,7 +6272,7 @@ function FilesTeamSection({ files, athletes, onPickAthlete }) {
 
   return (
     <div style={styles.perfPanel}>
-      <div style={styles.pFilters}>
+      <div className="tempo-scroll-x" style={styles.pFilters}>
         <span style={styles.pFilterLabel}>Type</span>
         {types.map(t => (
           <button key={t} onClick={() => setType(t)}
@@ -8317,6 +9119,178 @@ function WellnessChart({ data, height = 100 }) {
 }
 
 // ============================================================
+// FeedbackWidget — floating button + form for tester feedback
+// Always present. Submits via mailto: so testers don't need backend.
+// ============================================================
+function FeedbackWidget({ currentUser }) {
+  const [open, setOpen] = useState(false);
+  const [category, setCategory] = useState(null);
+  const [message, setMessage] = useState('');
+  const [sent, setSent] = useState(false);
+
+  const categories = [
+    { k: 'confusing',    l: 'Something was confusing',  emoji: '?' },
+    { k: 'missing',      l: 'Something is missing',     emoji: '＋' },
+    { k: 'broken',       l: "Something doesn't work",   emoji: '!' },
+    { k: 'idea',         l: 'I have an idea',           emoji: '◇' },
+    { k: 'general',      l: 'General comment',          emoji: '◌' }
+  ];
+
+  const [copied, setCopied] = useState(false);
+
+  const handleSend = () => {
+    const cat = categories.find(c => c.k === category);
+    const subject = `Tempo feedback: ${cat?.l || 'comment'}`;
+    const context = currentUser
+      ? `\n\n— sent while signed in as ${currentUser.name} (${currentUser.role})`
+      : '\n\n— sent from the login screen';
+    const body = `${message}${context}\n\nDemo version: ${DEMO_VERSION}\nURL: ${typeof window !== 'undefined' ? window.location.href : ''}`;
+
+    // Always copy to clipboard so testers have a fallback
+    const clipboardText = `To: ${FEEDBACK_EMAIL}\nSubject: ${subject}\n\n${body}`;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(clipboardText);
+        setCopied(true);
+      }
+    } catch {
+      // Some browsers (older Safari, embedded contexts) reject clipboard writes.
+      // We still try mailto: below — at minimum that's a path forward.
+    }
+
+    // Try to open the mail app as a convenience
+    const mailto = `mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    try { window.location.href = mailto; } catch {}
+
+    setSent(true);
+    // Reset after a beat
+    setTimeout(() => {
+      setOpen(false);
+      setSent(false);
+      setCopied(false);
+      setCategory(null);
+      setMessage('');
+    }, 3500);
+  };
+
+  const close = () => {
+    setOpen(false);
+    setCategory(null);
+    setMessage('');
+    setSent(false);
+    setCopied(false);
+  };
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        style={styles.feedbackFloater}
+        aria-label="Send feedback"
+      >
+        <span style={styles.feedbackFloaterText}>Feedback</span>
+      </button>
+
+      {open && (
+        <div style={styles.feedbackBackdrop} onClick={close}>
+          <div style={styles.feedbackSheet} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.userSheetGrip} />
+
+            {sent ? (
+              <div style={styles.feedbackSent}>
+                <div style={styles.feedbackSentIcon}>✓</div>
+                <div style={styles.feedbackSentTitle}>Thanks</div>
+                {copied ? (
+                  <>
+                    <div style={styles.feedbackSentText}>
+                      Copied to your clipboard. If your email app didn't open, paste it into a new message to:
+                    </div>
+                    <div style={styles.feedbackEmailChip}>{FEEDBACK_EMAIL}</div>
+                  </>
+                ) : (
+                  <>
+                    <div style={styles.feedbackSentText}>
+                      If your email app didn't open, please send your feedback directly to:
+                    </div>
+                    <div style={styles.feedbackEmailChip}>{FEEDBACK_EMAIL}</div>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div style={styles.feedbackBody}>
+                <div style={styles.feedbackHead}>
+                  <div>
+                    <div style={styles.feedbackTitle}>Send feedback</div>
+                    <div style={styles.feedbackSubtitle}>
+                      Anything confusing, missing, or off? Let me know.
+                    </div>
+                  </div>
+                  <button
+                    onClick={close}
+                    style={styles.userSheetClose}
+                    aria-label="Close"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div style={styles.feedbackCatLabel}>What kind of feedback?</div>
+                <div style={styles.feedbackCatGrid}>
+                  {categories.map(c => (
+                    <button
+                      key={c.k}
+                      onClick={() => setCategory(c.k)}
+                      style={{
+                        ...styles.feedbackCatBtn,
+                        ...(category === c.k ? styles.feedbackCatBtnActive : {})
+                      }}
+                    >
+                      <span style={styles.feedbackCatEmoji}>{c.emoji}</span>
+                      <span style={styles.feedbackCatLabelInner}>{c.l}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <div style={styles.feedbackCatLabel}>Tell me more</div>
+                <textarea
+                  style={styles.feedbackTextarea}
+                  rows="4"
+                  value={message}
+                  onChange={e => setMessage(e.target.value)}
+                  placeholder={
+                    category === 'confusing' ? "What confused you? Where were you in the app?" :
+                    category === 'missing'   ? "What were you trying to do?" :
+                    category === 'broken'    ? "What did you tap? What did you expect to happen?" :
+                    category === 'idea'      ? "What's the idea? What problem would it solve?" :
+                                              "Whatever's on your mind."
+                  }
+                />
+
+                <button
+                  onClick={handleSend}
+                  disabled={!category || !message.trim()}
+                  style={{
+                    ...styles.feedbackSendBtn,
+                    opacity: (category && message.trim()) ? 1 : 0.4
+                  }}
+                >
+                  Send feedback
+                </button>
+
+                <p style={styles.feedbackNote}>
+                  Copies to your clipboard and tries to open your email app. If email doesn't open, paste into a new message to {FEEDBACK_EMAIL}.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+
+// ============================================================
 // ROOT
 // ============================================================
 export default function App() {
@@ -8387,6 +9361,7 @@ export default function App() {
       <div style={styles.root}>
         <style>{globalCSS}</style>
         <LoginScreen onLogin={handleLogin} />
+        <FeedbackWidget currentUser={null} />
       </div>
     );
   }
@@ -8427,37 +9402,81 @@ export default function App() {
           onLogout={handleLogout}
         />
       )}
+      <FeedbackWidget currentUser={currentUser} />
     </div>
   );
 }
 
 // ============================================================
-// Intro screen — one tap to begin
+// Intro screen — landing page for testers
 // ============================================================
 function IntroScreen({ onContinue }) {
   return (
     <div style={styles.introFrame}>
       <div style={styles.introInner}>
-        <div style={styles.introMark}>◐</div>
-        <div style={styles.introBrand}>tempo</div>
-        <div style={styles.introTagline}>A calm training load monitor.</div>
+        {/* Brand */}
+        <div style={styles.introBrandRow}>
+          <div style={styles.introMark}>◐</div>
+          <div style={styles.introBrand}>tempo</div>
+        </div>
 
-        <div style={styles.introBody}>
-          <p style={styles.introPara}>
-            Tempo helps athletes track training load and recovery without the noise.
-            Coaches and clinicians see the same data, with permission.
-          </p>
-          <p style={styles.introPara}>
-            This is a prototype. Data is stored locally on this device.
+        {/* One-liner */}
+        <h1 style={styles.introHeadline}>
+          Training load monitoring for athletes and the people helping them.
+        </h1>
+
+        <p style={styles.introSubhead}>
+          A calm daily check-in for athletes, a clear caseload view for coaches and clinicians,
+          and consent-first sharing between them.
+        </p>
+
+        {/* Who it's for */}
+        <div style={styles.introWhoCard}>
+          <div style={styles.introWhoLabel}>For</div>
+          <div style={styles.introWhoList}>
+            <div style={styles.introWhoItem}>
+              <span style={styles.introWhoIcon}>↑</span>
+              <span style={styles.introWhoText}>
+                <strong>Recreational athletes</strong> — runners, cyclists, gym, hybrid, team sport
+              </span>
+            </div>
+            <div style={styles.introWhoItem}>
+              <span style={styles.introWhoIcon}>◆</span>
+              <span style={styles.introWhoText}>
+                <strong>Coaches</strong> — S&C, head coaches, personal trainers
+              </span>
+            </div>
+            <div style={styles.introWhoItem}>
+              <span style={styles.introWhoIcon}>＋</span>
+              <span style={styles.introWhoText}>
+                <strong>Clinicians</strong> — physios, sports doctors, allied health
+              </span>
+            </div>
+            <div style={styles.introWhoItem}>
+              <span style={styles.introWhoIcon}>◇</span>
+              <span style={styles.introWhoText}>
+                <strong>Clubs</strong> — single team, multi-squad, or full organisations
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Demo notice */}
+        <div style={styles.introDemoBox}>
+          <div style={styles.introDemoLabel}>You're seeing the demo</div>
+          <p style={styles.introDemoText}>
+            Nothing you do is saved. Reload to start fresh. Sign in as a seeded user to see
+            populated data, or create a new account to experience signup.
           </p>
         </div>
 
+        {/* CTA */}
         <button style={styles.introCta} onClick={onContinue}>
-          Begin
+          Open Tempo
         </button>
 
         <div style={styles.introFoot}>
-          Working draft · v0.1
+          Prototype · v0.4 · Feedback welcome
         </div>
       </div>
     </div>
@@ -9089,7 +10108,7 @@ function IdentitySwitcher({ currentUserId, onPick, onClose, asLoginPicker }) {
                 <div style={styles.identityName}>
                   {u.name}
                   {u.athleteId && (
-                    <span style={styles.dualIdentityChip}>also athlete</span>
+                    <span style={styles.dualIdentityChip}>+ athlete</span>
                   )}
                 </div>
                 <div style={styles.identityMeta}>
@@ -9473,7 +10492,7 @@ const styles = {
   identityName: {
     fontFamily: '"Fraunces", Georgia, serif',
     fontSize: 16, fontWeight: 500, color: '#1a1a1a',
-    letterSpacing: '-0.01em'
+    letterSpacing: '-0.01em', lineHeight: 1.35
   },
   dualIdentityChip: {
     marginLeft: 8,
@@ -9482,7 +10501,9 @@ const styles = {
     letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600,
     border: '1px solid #efd9a8',
     verticalAlign: 'middle',
-    fontFamily: 'Inter, system-ui, sans-serif'
+    fontFamily: 'Inter, system-ui, sans-serif',
+    whiteSpace: 'nowrap',
+    display: 'inline-block'
   },
   identityMeta: {
     fontSize: 11, color: '#8a8275', marginTop: 2,
@@ -9773,7 +10794,7 @@ const styles = {
     verticalAlign: 'middle'
   },
   invitePermToggleKnob: {
-    position: 'absolute', top: 2,
+    position: 'absolute', top: 2, left: 0,
     width: 20, height: 20, borderRadius: '50%',
     background: '#fdfbf5',
     boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
@@ -9783,6 +10804,274 @@ const styles = {
     background: '#fdfbf5', border: '1px solid #e8e4dc',
     borderRadius: 10, padding: '12px 14px',
     marginBottom: 10
+  },
+
+  // ===== Bulk testing session =====
+  // ===== Test search field =====
+  testSearchWrap: {
+    position: 'relative',
+    marginBottom: 12
+  },
+  testSearchInput: {
+    width: '100%',
+    padding: '11px 36px 11px 14px',
+    background: '#fdfbf5',
+    border: '1px solid #e0d9c8',
+    borderRadius: 10,
+    fontSize: 13,
+    color: '#1a1a1a',
+    fontFamily: 'inherit',
+    boxSizing: 'border-box',
+    outline: 'none'
+  },
+  testSearchClear: {
+    position: 'absolute',
+    right: 8, top: '50%', transform: 'translateY(-50%)',
+    width: 26, height: 26, borderRadius: '50%',
+    background: '#efeadd', color: '#5a564d',
+    border: 'none', cursor: 'pointer',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    padding: 0
+  },
+  testSearchEmpty: {
+    padding: '20px 16px',
+    background: '#fdfbf5',
+    border: '1px dashed #e0d9c8',
+    borderRadius: 10,
+    fontSize: 12, color: '#5a564d', textAlign: 'center',
+    fontStyle: 'italic'
+  },
+
+  // ===== CSV upload =====
+  testUploadHeroCard: {
+    background: '#1a1a1a', color: '#f5f1e8',
+    borderRadius: 14, padding: '18px 18px 16px',
+    marginBottom: 12
+  },
+  testUploadHeroLabel: {
+    fontSize: 10, letterSpacing: '0.14em',
+    textTransform: 'uppercase', color: '#c8b894', fontWeight: 600,
+    marginBottom: 6
+  },
+  testUploadHeroTitle: {
+    fontFamily: '"Fraunces", Georgia, serif',
+    fontSize: 18, fontWeight: 500, color: '#f5f1e8',
+    letterSpacing: '-0.01em', marginBottom: 8
+  },
+  testUploadHeroBody: {
+    fontSize: 12, color: '#c8b894', lineHeight: 1.55,
+    margin: '0 0 14px 0'
+  },
+  testUploadHeroBtn: {
+    background: '#f5f1e8', color: '#1a1a1a',
+    border: 'none', borderRadius: 100,
+    padding: '11px 18px', fontSize: 13, fontWeight: 600,
+    letterSpacing: '0.04em', cursor: 'pointer', fontFamily: 'inherit',
+    width: '100%'
+  },
+  uploadFormatCard: {
+    background: '#fdfbf5', border: '1px solid #e8e4dc',
+    borderRadius: 12, padding: '14px 16px',
+    marginBottom: 12
+  },
+  uploadFormatHead: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    marginBottom: 12, gap: 12, flexWrap: 'wrap'
+  },
+  uploadFormatTitle: {
+    fontSize: 11, letterSpacing: '0.08em',
+    textTransform: 'uppercase', color: '#8a8275', fontWeight: 600,
+    marginBottom: 10
+  },
+  uploadFormatExample: {
+    background: '#1a1a1a', color: '#f5f1e8',
+    borderRadius: 8, padding: '10px 12px',
+    marginBottom: 12,
+    overflowX: 'auto',
+    fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+    fontSize: 11, lineHeight: 1.7
+  },
+  uploadFormatExampleHeader: {
+    color: '#c8b894', whiteSpace: 'nowrap'
+  },
+  uploadFormatExampleRow: {
+    whiteSpace: 'nowrap'
+  },
+  uploadFormatTips: {
+    display: 'flex', flexDirection: 'column', gap: 6
+  },
+  uploadFormatTip: {
+    fontSize: 12, color: '#5a564d', lineHeight: 1.5
+  },
+  uploadTemplateBtn: {
+    background: 'transparent', color: '#1a1a1a',
+    border: '1px solid #c8b894', borderRadius: 100,
+    padding: '6px 12px', fontSize: 11, fontWeight: 600,
+    letterSpacing: '0.04em', cursor: 'pointer', fontFamily: 'inherit',
+    whiteSpace: 'nowrap'
+  },
+  uploadFormatBody: {
+    display: 'flex', flexDirection: 'column', gap: 6
+  },
+  uploadFormatRow: {
+    display: 'flex', alignItems: 'baseline', gap: 8
+  },
+  uploadFormatCol: {
+    fontSize: 11, color: '#8a8275', minWidth: 90,
+    letterSpacing: '0.02em'
+  },
+  uploadFormatVal: {
+    fontSize: 12, color: '#1a1a1a',
+    fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+    lineHeight: 1.5
+  },
+  uploadInputCard: {
+    background: '#fdfbf5', border: '1px solid #e8e4dc',
+    borderRadius: 12, padding: '14px 16px',
+    marginBottom: 12
+  },
+  uploadInputHead: {
+    marginBottom: 10
+  },
+  uploadInputLabel: {
+    fontSize: 10, letterSpacing: '0.14em',
+    textTransform: 'uppercase', color: '#8a8275', fontWeight: 600
+  },
+  uploadInputDivider: {
+    fontSize: 11, color: '#8a8275',
+    margin: '4px 0 10px 0', fontStyle: 'italic'
+  },
+  uploadTextarea: {
+    width: '100%',
+    padding: '10px 12px',
+    background: '#f5f1e8', border: '1px solid #e0d9c8',
+    borderRadius: 8,
+    fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+    fontSize: 12, color: '#1a1a1a',
+    boxSizing: 'border-box', marginBottom: 12,
+    resize: 'vertical'
+  },
+  uploadParseBtn: {
+    background: 'transparent', color: '#1a1a1a',
+    border: '1px solid #1a1a1a', borderRadius: 100,
+    padding: '10px 18px', fontSize: 13, fontWeight: 600,
+    letterSpacing: '0.04em', cursor: 'pointer', fontFamily: 'inherit',
+    width: '100%'
+  },
+  uploadPreviewCard: {
+    background: '#fdfbf5', border: '1px solid #e8e4dc',
+    borderRadius: 12, padding: '14px 16px',
+    marginBottom: 12
+  },
+  uploadPreviewHead: {
+    paddingBottom: 12,
+    borderBottom: '1px solid #efeadd',
+    marginBottom: 12
+  },
+  uploadPreviewTitle: {
+    fontFamily: '"Fraunces", Georgia, serif',
+    fontSize: 15, fontWeight: 500, color: '#1a1a1a',
+    letterSpacing: '-0.01em'
+  },
+  uploadPreviewMeta: {
+    fontSize: 11, color: '#8a8275', marginTop: 3,
+    letterSpacing: '0.02em'
+  },
+  uploadPreviewEmpty: {
+    fontSize: 12, color: '#5a564d',
+    textAlign: 'center', padding: '12px 0',
+    fontStyle: 'italic'
+  },
+  uploadPreviewList: {
+    display: 'flex', flexDirection: 'column', gap: 6,
+    maxHeight: 320, overflowY: 'auto'
+  },
+  testUploadRow: {
+    display: 'flex', gap: 12,
+    padding: '8px 10px',
+    background: '#f5f1e8', borderRadius: 6,
+    borderLeft: '3px solid #6e7e5a' // green-ish for valid
+  },
+  testUploadRowInvalid: {
+    borderLeft: '3px solid #b8693d',
+    background: '#fdf5e9'
+  },
+  testUploadRowNum: {
+    fontSize: 10, color: '#8a8275',
+    letterSpacing: '0.04em', textTransform: 'uppercase',
+    fontWeight: 600, flexShrink: 0,
+    width: 50
+  },
+  testUploadRowOk: {
+    flex: 1, minWidth: 0
+  },
+  testUploadRowName: {
+    fontSize: 12, color: '#1a1a1a', fontWeight: 500,
+    lineHeight: 1.4
+  },
+  testUploadRowVal: {
+    fontSize: 11, color: '#5a564d', marginTop: 2,
+    fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace'
+  },
+  testUploadRowErr: {
+    flex: 1, minWidth: 0
+  },
+  testUploadErrText: {
+    fontSize: 11, color: '#b8693d', lineHeight: 1.5
+  },
+
+  bulkTestHint: {
+    fontSize: 11, color: '#8a8275', fontStyle: 'italic',
+    lineHeight: 1.5, marginTop: 10, padding: '8px 10px',
+    background: '#f5f1e8', borderRadius: 6
+  },
+  bulkTestRow: {
+    display: 'flex', alignItems: 'center', gap: 12,
+    background: '#fdfbf5', border: '1px solid #e8e4dc',
+    borderRadius: 10, padding: '12px 14px'
+  },
+  bulkTestAvatar: {
+    width: 32, height: 32, borderRadius: '50%',
+    background: '#efeadd', color: '#5a564d',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontFamily: '"Fraunces", Georgia, serif',
+    fontSize: 12, fontWeight: 500, flexShrink: 0
+  },
+  bulkTestNameCol: {
+    flex: 1, minWidth: 0
+  },
+  bulkTestName: {
+    fontSize: 13, color: '#1a1a1a', fontWeight: 500
+  },
+  bulkTestMeta: {
+    fontSize: 10, color: '#8a8275', marginTop: 2,
+    letterSpacing: '0.02em'
+  },
+  bulkTestInputCol: {
+    display: 'flex', flexDirection: 'column',
+    alignItems: 'flex-end', gap: 2,
+    flexShrink: 0
+  },
+  bulkTestInput: {
+    width: 80, padding: '8px 10px',
+    background: '#fdfbf5', border: '1px solid #c8b894',
+    borderRadius: 6,
+    fontSize: 14, color: '#1a1a1a', textAlign: 'right',
+    fontFamily: 'inherit', boxSizing: 'border-box'
+  },
+  bulkTestInputSmall: {
+    width: 56, padding: '8px 8px',
+    background: '#fdfbf5', border: '1px solid #c8b894',
+    borderRadius: 6,
+    fontSize: 14, color: '#1a1a1a', textAlign: 'right',
+    fontFamily: 'inherit', boxSizing: 'border-box'
+  },
+  bulkTestBilateralRow: {
+    display: 'flex', gap: 4
+  },
+  bulkTestUnit: {
+    fontSize: 9, color: '#8a8275',
+    letterSpacing: '0.06em', textTransform: 'uppercase'
   },
 
   // ===== Contacts view =====
@@ -9968,76 +11257,325 @@ const styles = {
 
   // ===== INTRO SCREEN =====
   introFrame: {
-    maxWidth: 420,
+    maxWidth: 480,
     margin: '0 auto',
     background: '#f5f1e8',
-    minHeight: '90vh',
-    borderRadius: 28,
-    padding: '60px 32px 40px',
-    boxShadow: '0 1px 0 rgba(0,0,0,0.04), 0 12px 40px -12px rgba(0,0,0,0.18)',
-    border: '1px solid #e8e4dc',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    minHeight: '100vh',
+    padding: '40px 24px 40px',
     animation: 'fadein 0.4s ease'
   },
   introInner: {
-    textAlign: 'center',
+    textAlign: 'left',
     width: '100%'
   },
+  introBrandRow: {
+    display: 'flex',
+    alignItems: 'baseline',
+    gap: 10,
+    marginBottom: 36
+  },
   introMark: {
-    fontSize: 56,
+    fontSize: 28,
     color: '#1a1a1a',
-    marginBottom: 12,
     lineHeight: 1
   },
   introBrand: {
     fontFamily: '"Fraunces", Georgia, serif',
-    fontSize: 38,
-    fontWeight: 400,
+    fontSize: 22,
+    fontWeight: 500,
     letterSpacing: '-0.02em',
+    color: '#1a1a1a'
+  },
+  introHeadline: {
+    fontFamily: '"Fraunces", Georgia, serif',
+    fontSize: 30,
+    fontWeight: 400,
     color: '#1a1a1a',
+    letterSpacing: '-0.025em',
+    lineHeight: 1.2,
+    margin: '0 0 16px 0'
+  },
+  introSubhead: {
+    fontSize: 15,
+    lineHeight: 1.55,
+    color: '#5a564d',
+    margin: '0 0 28px 0'
+  },
+  introWhoCard: {
+    background: '#fdfbf5',
+    border: '1px solid #e8e4dc',
+    borderRadius: 14,
+    padding: '16px 18px',
+    marginBottom: 18
+  },
+  introWhoLabel: {
+    fontSize: 10,
+    letterSpacing: '0.14em',
+    textTransform: 'uppercase',
+    color: '#8a8275',
+    fontWeight: 600,
     marginBottom: 12
   },
-  introTagline: {
-    fontFamily: '"Fraunces", Georgia, serif',
-    fontSize: 17,
-    fontStyle: 'italic',
-    color: '#5a564d',
-    marginBottom: 40,
-    letterSpacing: '-0.01em'
+  introWhoList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10
   },
-  introBody: {
-    marginBottom: 40,
-    paddingTop: 20,
-    borderTop: '1px solid #e0d9c8'
+  introWhoItem: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 12
   },
-  introPara: {
-    fontSize: 14,
-    lineHeight: 1.6,
+  introWhoIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: '50%',
+    background: '#efeadd',
+    color: '#1a1a1a',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: 13,
+    flexShrink: 0,
+    marginTop: 1
+  },
+  introWhoText: {
+    fontSize: 13,
+    color: '#1a1a1a',
+    lineHeight: 1.5
+  },
+  introDemoBox: {
+    background: '#fdf5e9',
+    border: '1px solid #efd9a8',
+    borderRadius: 12,
+    padding: '12px 14px',
+    marginBottom: 24
+  },
+  introDemoLabel: {
+    fontSize: 10,
+    letterSpacing: '0.14em',
+    textTransform: 'uppercase',
+    color: '#a37b1a',
+    fontWeight: 600,
+    marginBottom: 6
+  },
+  introDemoText: {
+    fontSize: 12,
     color: '#5a564d',
-    margin: '0 0 14px',
-    textAlign: 'left'
+    lineHeight: 1.55,
+    margin: 0
   },
   introCta: {
     background: '#1a1a1a',
     color: '#f5f1e8',
     border: 'none',
     borderRadius: 100,
-    padding: '14px 48px',
+    padding: '16px 32px',
     fontSize: 14,
-    fontWeight: 500,
+    fontWeight: 600,
     letterSpacing: '0.06em',
     textTransform: 'uppercase',
     cursor: 'pointer',
-    fontFamily: 'inherit'
+    fontFamily: 'inherit',
+    width: '100%'
   },
   introFoot: {
-    marginTop: 40,
+    marginTop: 22,
     fontSize: 11,
     color: '#8a8275',
-    letterSpacing: '0.1em',
-    textTransform: 'uppercase'
+    letterSpacing: '0.08em',
+    textAlign: 'center'
+  },
+
+  // ===== Feedback widget =====
+  feedbackFloater: {
+    position: 'fixed',
+    bottom: 20,
+    right: 20,
+    background: '#1a1a1a',
+    color: '#f5f1e8',
+    border: '1px solid #1a1a1a',
+    borderRadius: 100,
+    padding: '11px 18px',
+    fontSize: 12,
+    fontWeight: 600,
+    letterSpacing: '0.06em',
+    textTransform: 'uppercase',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    boxShadow: '0 4px 16px -2px rgba(0,0,0,0.25), 0 2px 4px -1px rgba(0,0,0,0.12)',
+    zIndex: 50,
+    transition: 'transform 0.15s ease'
+  },
+  feedbackFloaterText: {
+    display: 'inline-block'
+  },
+  feedbackBackdrop: {
+    position: 'fixed',
+    inset: 0,
+    zIndex: 220,
+    background: 'rgba(20, 18, 14, 0.4)',
+    display: 'flex',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    padding: 16,
+    animation: 'fadein 0.18s ease'
+  },
+  feedbackSheet: {
+    width: '100%',
+    maxWidth: 460,
+    background: '#fdfbf5',
+    borderRadius: 20,
+    boxShadow: '0 -8px 40px -8px rgba(0,0,0,0.32), 0 -2px 8px -2px rgba(0,0,0,0.14)',
+    border: '1px solid #e8e4dc',
+    padding: '14px 0 8px',
+    animation: 'sheetin 0.25s cubic-bezier(.22,.91,.34,1)'
+  },
+  feedbackBody: {
+    padding: '4px 20px 20px'
+  },
+  feedbackHead: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 14,
+    paddingBottom: 16
+  },
+  feedbackTitle: {
+    fontFamily: '"Fraunces", Georgia, serif',
+    fontSize: 18,
+    fontWeight: 500,
+    color: '#1a1a1a',
+    letterSpacing: '-0.01em',
+    lineHeight: 1.2
+  },
+  feedbackSubtitle: {
+    fontSize: 12,
+    color: '#5a564d',
+    marginTop: 4,
+    lineHeight: 1.5
+  },
+  feedbackCatLabel: {
+    fontSize: 10,
+    letterSpacing: '0.14em',
+    textTransform: 'uppercase',
+    color: '#5a564d',
+    fontWeight: 600,
+    marginBottom: 8,
+    marginTop: 4
+  },
+  feedbackCatGrid: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 6,
+    marginBottom: 18
+  },
+  feedbackCatBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    background: '#fdfbf5',
+    border: '1px solid #e8e4dc',
+    borderRadius: 10,
+    padding: '10px 12px',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    textAlign: 'left',
+    width: '100%',
+    transition: 'border-color 0.15s ease'
+  },
+  feedbackCatBtnActive: {
+    borderColor: '#1a1a1a',
+    background: '#fdfbf5'
+  },
+  feedbackCatEmoji: {
+    width: 24,
+    height: 24,
+    borderRadius: '50%',
+    background: '#efeadd',
+    color: '#1a1a1a',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: 13,
+    flexShrink: 0
+  },
+  feedbackCatLabelInner: {
+    fontSize: 13,
+    color: '#1a1a1a'
+  },
+  feedbackTextarea: {
+    width: '100%',
+    padding: '12px 14px',
+    background: '#fdfbf5',
+    border: '1px solid #e0d9c8',
+    borderRadius: 10,
+    fontSize: 13,
+    color: '#1a1a1a',
+    fontFamily: 'inherit',
+    lineHeight: 1.5,
+    resize: 'vertical',
+    boxSizing: 'border-box',
+    marginBottom: 14
+  },
+  feedbackSendBtn: {
+    width: '100%',
+    background: '#1a1a1a',
+    color: '#f5f1e8',
+    border: 'none',
+    borderRadius: 100,
+    padding: '13px 28px',
+    fontSize: 13,
+    fontWeight: 600,
+    letterSpacing: '0.06em',
+    cursor: 'pointer',
+    fontFamily: 'inherit'
+  },
+  feedbackNote: {
+    fontSize: 11,
+    color: '#8a8275',
+    margin: '10px 0 0 0',
+    fontStyle: 'italic',
+    textAlign: 'center'
+  },
+  feedbackSent: {
+    padding: '32px 20px 36px',
+    textAlign: 'center'
+  },
+  feedbackSentIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: '50%',
+    background: '#1a1a1a',
+    color: '#f5f1e8',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: 24,
+    margin: '0 auto 16px'
+  },
+  feedbackSentTitle: {
+    fontFamily: '"Fraunces", Georgia, serif',
+    fontSize: 22,
+    fontWeight: 500,
+    color: '#1a1a1a',
+    letterSpacing: '-0.01em',
+    marginBottom: 8
+  },
+  feedbackSentText: {
+    fontSize: 13,
+    color: '#5a564d',
+    lineHeight: 1.5
+  },
+  feedbackEmailChip: {
+    display: 'inline-block',
+    marginTop: 12,
+    padding: '8px 14px',
+    background: '#1a1a1a',
+    color: '#f5f1e8',
+    borderRadius: 100,
+    fontSize: 13,
+    fontWeight: 500,
+    userSelect: 'all'
   },
 
   // ===== ATHLETE SWITCHER MODAL =====
@@ -10214,9 +11752,9 @@ const styles = {
     padding: 4
   },
   dualModeBtn: {
-    display: 'flex', alignItems: 'center', gap: 10,
+    display: 'flex', alignItems: 'center', gap: 8,
     background: 'transparent', border: 'none',
-    padding: '10px 12px', borderRadius: 10,
+    padding: '10px 10px', borderRadius: 10,
     cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
     color: '#5a564d',
     transition: 'all 0.15s ease',
@@ -10237,7 +11775,8 @@ const styles = {
   dualModeBtnSub: {
     fontSize: 10, color: '#8a8275', marginTop: 2,
     letterSpacing: '0.02em',
-    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+    lineHeight: 1.35,
+    wordBreak: 'break-word'
   },
 
   // ===== Roster group headers (for multi-club staff) =====
@@ -10434,7 +11973,7 @@ const styles = {
     flexShrink: 0
   },
   aToggleKnob: {
-    position: 'absolute', top: 2,
+    position: 'absolute', top: 2, left: 0,
     width: 20, height: 20, borderRadius: '50%',
     background: '#fdfbf5',
     boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
@@ -10640,15 +12179,20 @@ const styles = {
   kpiSub: { fontSize: 11, color: '#8a8275', marginTop: 4 },
 
   pFilters: {
-    display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14
+    display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14,
+    overflowX: 'auto', flexWrap: 'nowrap',
+    paddingBottom: 4,
+    WebkitOverflowScrolling: 'touch'
   },
   pFilterLabel: {
     fontSize: 10, letterSpacing: '0.16em', textTransform: 'uppercase',
-    color: '#8a8275', fontWeight: 600, marginRight: 6
+    color: '#8a8275', fontWeight: 600, marginRight: 6,
+    flexShrink: 0
   },
   pFilterBtn: {
     padding: '6px 12px', borderRadius: 6, background: 'transparent',
-    border: '1px solid #e0d9c8', cursor: 'pointer', fontSize: 12, color: '#5a564d'
+    border: '1px solid #e0d9c8', cursor: 'pointer', fontSize: 12, color: '#5a564d',
+    fontFamily: 'inherit', whiteSpace: 'nowrap', flexShrink: 0
   },
   pFilterBtnActive: { background: '#1a1a1a', color: '#f5f1e8', border: '1px solid #1a1a1a' },
 
@@ -10820,6 +12364,25 @@ const styles = {
     border: 'none', borderRadius: 100, padding: '11px 18px',
     fontSize: 13, fontWeight: 600, letterSpacing: '0.04em',
     cursor: 'pointer', fontFamily: 'inherit', width: '100%'
+  },
+  testingActionRow: {
+    display: 'flex', gap: 8, marginBottom: 4
+  },
+  testingActionPrimary: {
+    flex: 2,
+    background: '#1a1a1a', color: '#f5f1e8',
+    border: 'none', borderRadius: 100, padding: '11px 14px',
+    fontSize: 13, fontWeight: 600, letterSpacing: '0.04em',
+    cursor: 'pointer', fontFamily: 'inherit',
+    whiteSpace: 'nowrap'
+  },
+  testingActionSecondary: {
+    flex: 1,
+    background: 'transparent', color: '#1a1a1a',
+    border: '1px solid #1a1a1a', borderRadius: 100, padding: '11px 14px',
+    fontSize: 13, fontWeight: 600, letterSpacing: '0.04em',
+    cursor: 'pointer', fontFamily: 'inherit',
+    whiteSpace: 'nowrap'
   },
   perfTeamActionBar: {
     marginBottom: 16,
