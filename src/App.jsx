@@ -2,6 +2,13 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Activity, Users, ChevronRight, Plus, Check, AlertCircle, TrendingUp, TrendingDown, Minus, X, ArrowLeft, FileText, Filter } from 'lucide-react';
 
 // ============================================================
+// Demo configuration
+// Change FEEDBACK_EMAIL to your real address before sending to testers.
+// ============================================================
+const FEEDBACK_EMAIL = 'feedback@example.com';
+const DEMO_VERSION = 'v0.4';
+
+// ============================================================
 // Storage helpers - persistent across sessions
 // ============================================================
 const storage = {
@@ -142,17 +149,86 @@ const TEST_CATALOG = [
   { key: 'nordic',    name: 'Nordic hamstring',     cat: 'Strength',unit: 'N',      better: 'higher', brief: 'Eccentric knee flexor strength. NordBord or load cell. <256N flagged as elevated risk.' },
   { key: 'imtp',      name: 'Isometric mid-thigh pull', cat: 'Strength', unit: 'N', better: 'higher', brief: 'Maximal isometric force. Force plate required.' },
   { key: 'iso_add',   name: 'Isometric adductor',   cat: 'Strength',unit: 'N',      better: 'higher', brief: 'Hip adductor strength. ForceFrame or sphygmomanometer. Asymmetry flagged for groin risk.' },
+  { key: 'iso_abd',   name: 'Isometric abductor',   cat: 'Strength',unit: 'N',      better: 'higher', brief: 'Hip abductor strength. Often paired with adductor for adductor:abductor ratio (>0.9 is healthy).' },
+  // ----- Barbell lifts (1RM) -----
+  { key: 'sq_1rm',    name: 'Back squat 1RM',       cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'One-rep maximum. Below parallel. Belt allowed; suit/wraps not.' },
+  { key: 'sq_3rm',    name: 'Back squat 3RM',       cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Three-rep max. Common in-season test — lower CNS demand than 1RM.' },
+  { key: 'sq_5rm',    name: 'Back squat 5RM',       cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Five-rep max. Estimates 1RM at ~87% (Epley/Brzycki).' },
+  { key: 'fsq_1rm',   name: 'Front squat 1RM',      cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Anterior load. Typically 80–85% of back squat 1RM.' },
+  { key: 'dl_1rm',    name: 'Deadlift 1RM',         cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Conventional or sumo. Touch-and-go or dead stop, record technique.' },
+  { key: 'dl_3rm',    name: 'Deadlift 3RM',         cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Three-rep max. Same setup as 1RM.' },
+  { key: 'dl_5rm',    name: 'Deadlift 5RM',         cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Five-rep max. Lower spinal load than 1RM testing.' },
+  { key: 'rdl_5rm',   name: 'Romanian DL 5RM',      cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Hip-hinge variant. Posterior chain emphasis.' },
+  { key: 'tb_dl',     name: 'Trap-bar DL 1RM',      cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Hex/trap bar. Reduced lumbar shear vs conventional.' },
+  { key: 'bp_1rm',    name: 'Bench press 1RM',      cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Touch-and-pause on chest. Feet flat, hips on bench.' },
+  { key: 'bp_3rm',    name: 'Bench press 3RM',      cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Three-rep max. Common in-season test.' },
+  { key: 'bp_5rm',    name: 'Bench press 5RM',      cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Five-rep max. Estimates 1RM at ~87%.' },
+  { key: 'inc_bp_1rm',name: 'Incline bench 1RM',    cat: 'Strength',unit: 'kg',     better: 'higher', brief: '30–45° incline. Upper-pec emphasis.' },
+  { key: 'ohp_1rm',   name: 'Overhead press 1RM',   cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Strict press. No leg drive.' },
+  { key: 'push_press',name: 'Push press 1RM',       cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Leg drive permitted, no re-bend at lockout.' },
+  { key: 'pc_1rm',    name: 'Power clean 1RM',      cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Catch above parallel. Fast pull from floor.' },
+  { key: 'hp_clean',  name: 'Hang power clean 1RM', cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Hang start at mid-thigh. Hip-explosion focus.' },
+  { key: 'snatch_1rm',name: 'Snatch 1RM',           cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Full or power. Highly technical.' },
+  // ----- Bodyweight strength -----
+  { key: 'pullup_max',name: 'Pull-ups (max reps)',  cat: 'Strength',unit: 'reps',   better: 'higher', brief: 'Strict, dead hang, chin over bar. Bodyweight.' },
+  { key: 'pullup_wt', name: 'Weighted pull-up 1RM', cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Added load via belt. Record load excluding bodyweight.' },
+  { key: 'chinup_max',name: 'Chin-ups (max reps)',  cat: 'Strength',unit: 'reps',   better: 'higher', brief: 'Supinated grip, strict.' },
+  { key: 'dip_max',   name: 'Dips (max reps)',      cat: 'Strength',unit: 'reps',   better: 'higher', brief: 'Bodyweight, full ROM, shoulders below elbows at bottom.' },
+  { key: 'dip_wt',    name: 'Weighted dip 1RM',     cat: 'Strength',unit: 'kg',     better: 'higher', brief: 'Belt-loaded. Record added load.' },
+  { key: 'pushup_max',name: 'Push-ups in 60s',      cat: 'Strength',unit: 'reps',   better: 'higher', brief: 'Strict, chest to fist depth, 60s window.' },
+  // ----- Posterior chain endurance -----
+  { key: 'nordic',    name: 'Nordic hamstring max angle', cat: 'Strength', unit: '°',     better: 'higher', brief: 'Break-point angle on NordBord or supervised. Lower angle = stronger eccentric.' },
+  { key: 'nordic_force',name: 'Nordic peak force',  cat: 'Strength',unit: 'N',      better: 'higher', brief: 'NordBord peak eccentric hamstring force. Bilateral, asymmetry >15% flagged.' },
+  // ----- Isokinetic -----
+  { key: 'iso_quad',  name: 'Isokinetic quad 60°/s',cat: 'Strength',unit: 'Nm',     better: 'higher', brief: 'Peak torque concentric knee extension. Asymmetry >10–15% notable.' },
+  { key: 'iso_ham',   name: 'Isokinetic ham 60°/s', cat: 'Strength',unit: 'Nm',     better: 'higher', brief: 'Peak torque concentric knee flexion. H:Q ratio ≥0.6 typical target.' },
 
   // ===== BODY COMP =====
   { key: 'mass',      name: 'Body mass',            cat: 'Body comp',unit: 'kg',    better: 'neutral', brief: 'Morning, post-void.' },
   { key: 'height',    name: 'Standing height',      cat: 'Body comp',unit: 'cm',    better: 'neutral', brief: 'Stadiometer.' },
   { key: 'skinfolds', name: 'Sum of 7 skinfolds',   cat: 'Body comp',unit: 'mm',    better: 'lower',   brief: 'ISAK protocol. Triceps, subscapular, biceps, supraspinale, abdominal, thigh, calf.' },
+  { key: 'dexa_lbm',  name: 'DEXA lean mass',       cat: 'Body comp',unit: 'kg',    better: 'higher',  brief: 'Total lean tissue. Gold-standard composition measure.' },
+  { key: 'dexa_fm',   name: 'DEXA fat mass',        cat: 'Body comp',unit: 'kg',    better: 'lower',   brief: 'Total fat tissue. Track alongside lean mass changes.' },
+  { key: 'bia_pct',   name: 'BIA body fat %',       cat: 'Body comp',unit: '%',     better: 'lower',   brief: 'Bioimpedance estimate. Less accurate than DEXA but quick.' },
+  { key: 'waist',     name: 'Waist circumference',  cat: 'Body comp',unit: 'cm',    better: 'lower',   brief: 'Narrowest point between ribs and iliac crest.' },
+
+  // ===== CLINICAL (physio / allied health) =====
+  // ----- Calf / Achilles -----
+  { key: 'slhr_calf', name: 'Single-leg calf raise (max reps)', cat: 'Clinical', unit: 'reps',  better: 'higher', brief: 'Metronome at 60 bpm, knee straight, full height each rep, 10° incline. Hébert-Losier et al. — ~25 reps typical for healthy adults. Bilateral, asymmetry >5 reps notable.' },
+  { key: 'slhr_bent', name: 'Bent-knee calf raise (max reps)',  cat: 'Clinical', unit: 'reps',  better: 'higher', brief: 'Soleus-dominant variant. Knee bent to ~60°, 60 bpm metronome.' },
+  { key: 'silfverskiold', name: 'Silfverskiöld dorsiflexion (knee straight)', cat: 'Clinical', unit: '°', better: 'higher', brief: 'Ankle DF with knee extended. Compare to knee-flexed measure to isolate gastroc vs soleus tightness.' },
+  // ----- Knee / hip ROM -----
+  { key: 'thomas',    name: 'Modified Thomas test', cat: 'Clinical',unit: '°',      better: 'higher', brief: 'Hip extension passive ROM. Tests iliopsoas/rectus femoris tightness.' },
+  { key: 'ober',      name: 'Modified Ober test',   cat: 'Clinical',unit: '°',      better: 'higher', brief: 'ITB/TFL tightness. Side-lying, hip extended, leg lowered. Record adduction angle.' },
+  { key: 'sl_squat',  name: 'Single-leg squat depth', cat: 'Clinical',unit: '°',    better: 'higher', brief: 'Knee flexion at lowest point maintaining control. Asymmetry + knee valgus noted.' },
+  { key: 'navicular', name: 'Navicular drop',       cat: 'Clinical',unit: 'mm',     better: 'lower',   brief: 'Foot pronation measure. Difference between sit and stand navicular tuberosity height.' },
+  // ----- Hop battery (ACL RTS) -----
+  { key: 'sl_hop',    name: 'Single-leg hop for distance', cat: 'Clinical', unit: 'cm', better: 'higher', brief: 'Three trials each side. Limb symmetry index (LSI) ≥90% commonly used; 95–100% recommended for ACL RTS.' },
+  { key: 'triple_hop',name: 'Triple hop for distance',     cat: 'Clinical', unit: 'cm', better: 'higher', brief: 'Three consecutive hops, same leg. LSI ≥90% target.' },
+  { key: 'triple_x',  name: 'Triple crossover hop',        cat: 'Clinical', unit: 'cm', better: 'higher', brief: 'Three hops, crossing midline. Tests rotational control. LSI ≥90% target.' },
+  { key: 'hop_6m',    name: '6m timed hop',                cat: 'Clinical', unit: 's',  better: 'lower',  brief: 'Time to cover 6m on one leg. Requires timing gates for reliability.' },
+  { key: 'side_hop',  name: 'Side hop (30s)',              cat: 'Clinical', unit: 'reps', better: 'higher', brief: 'Reps over 30cm tape in 30s. Lateral knee stability + endurance.' },
+  // ----- Balance / movement screens -----
+  { key: 'yb_ant',    name: 'Y-balance anterior reach',    cat: 'Clinical', unit: '%',  better: 'higher', brief: 'Anterior reach distance as % leg length. <94% LSI = 2.5× injury risk (Plisky). Normal range 60–80% LL.' },
+  { key: 'yb_pm',     name: 'Y-balance posteromedial',     cat: 'Clinical', unit: '%',  better: 'higher', brief: 'PM reach % LL. Typically larger than anterior.' },
+  { key: 'yb_pl',     name: 'Y-balance posterolateral',    cat: 'Clinical', unit: '%',  better: 'higher', brief: 'PL reach % LL. Composite of three directions used overall.' },
+  { key: 'yb_comp',   name: 'Y-balance composite',         cat: 'Clinical', unit: '%',  better: 'higher', brief: 'Average of 3 directions / 3× leg length. Normal range 85–115% LL (age 10–18). 94% LSI composite for D1 athletes.' },
+  { key: 'sebt',      name: 'Star excursion balance',      cat: 'Clinical', unit: '%',  better: 'higher', brief: '8-direction reach % LL. Y-balance is a standardised subset (3 directions).' },
+  { key: 'fms',       name: 'FMS composite',               cat: 'Clinical', unit: '/21', better: 'higher', brief: '7 movement patterns × 0–3, max 21. ≤14 historically linked to elevated injury risk; modern use is corrective rather than predictive.' },
+  // ----- Joint laxity / general screens -----
+  { key: 'beighton',  name: 'Beighton hypermobility',      cat: 'Clinical', unit: '/9',  better: 'neutral', brief: '9-point hypermobility scale. ≥4 (women) or ≥6 (men) = generalised joint hypermobility.' },
+  { key: 'pain_vas',  name: 'Pain VAS (current)',          cat: 'Clinical', unit: '/10', better: 'lower',   brief: 'Visual analog scale. Worst pain in last 24h, current activity-specific.' },
+  // ----- Endurance / aerobic clinical -----
+  { key: 'plank',     name: 'Front plank (max hold)',      cat: 'Clinical', unit: 's',   better: 'higher',  brief: 'Forearm plank to failure. Trunk endurance.' },
+  { key: 'side_plank',name: 'Side plank (max hold)',       cat: 'Clinical', unit: 's',   better: 'higher',  brief: 'Lateral hip/oblique endurance. Bilateral, asymmetry noted.' },
+  { key: 'biering',   name: 'Biering-Sørensen back ext',   cat: 'Clinical', unit: 's',   better: 'higher',  brief: 'Prone trunk extension hold over plinth. <176s (men) / <198s (women) = elevated low back pain risk.' },
+  { key: 'mcg_neck',  name: 'McGill neck flexor endurance',cat: 'Clinical', unit: 's',   better: 'higher',  brief: 'Supine head-lift hold. Neck flexor stamina; relevant to whiplash/concussion rehab.' },
 
   // ===== CUSTOM =====
   { key: 'custom',    name: 'Custom test',          cat: 'Custom',  unit: '',       better: 'neutral', brief: 'Free-form. Define the unit and what counts as a good result inline.' }
 ];
 
-const TEST_CATEGORIES = ['Aerobic', 'Speed', 'Agility', 'Power', 'Strength', 'Body comp', 'Custom'];
+const TEST_CATEGORIES = ['Aerobic', 'Speed', 'Agility', 'Power', 'Strength', 'Body comp', 'Clinical', 'Custom'];
 
 const getTest = (key) => TEST_CATALOG.find(t => t.key === key) || TEST_CATALOG[TEST_CATALOG.length - 1];
 
@@ -482,6 +558,20 @@ const generateSeedData = () => {
     'Ethan Cole', 'Mia Pereira', 'Ava Lindqvist', 'Sophie Bremner'
   ];
 
+  // Squad designation — splits the senior squad into two age groups so a
+  // multi-squad club is the seed default. Coaches commonly want to filter
+  // by squad without losing the whole-club view.
+  const athleteSquads = [
+    'Seniors',  // Tom
+    'Seniors',  // Liam
+    'Seniors',  // Jack
+    'Seniors',  // Noah
+    'Seniors',  // Ethan
+    'U18s',     // Mia
+    'U18s',     // Ava
+    'U18s'      // Sophie
+  ];
+
   // Injury / availability status — the traffic light:
   //   'available'  → green   training fully
   //   'modified'   → amber   transitioning / return-to-play
@@ -592,16 +682,109 @@ const generateSeedData = () => {
       yearsExperience: 3, notes: 'Annual SCAT6 mandatory due to concussion history.' }
   ];
 
+  // Per-athlete contact sharing preferences — controls what is visible on the
+  // staff Contacts tab. Most athletes share phone+email by default; sensitive
+  // fields (emergency contact, GP) require explicit opt-in.
+  const contactSharingDefaults = [
+    { phone: true,  email: true, emergencyContact: true,  gp: true,  notes: '' },           // Tom — opted into all
+    { phone: true,  email: true, emergencyContact: false, gp: false, notes: '' },           // Liam
+    { phone: true,  email: true, emergencyContact: true,  gp: false, notes: '' },           // Jack
+    { phone: false, email: true, emergencyContact: true,  gp: true,  notes: 'Prefer email contact.' }, // Noah — injured, GP context shared
+    { phone: true,  email: true, emergencyContact: false, gp: false, notes: '' },           // Ethan
+    { phone: true,  email: true, emergencyContact: true,  gp: false, notes: '' },           // Mia
+    { phone: true,  email: true, emergencyContact: true,  gp: true,  notes: '' },           // Ava — injured
+    { phone: false, email: true, emergencyContact: true,  gp: false, notes: 'Text only — no calls before 8am.' } // Sophie
+  ];
+
   const teamAthletes = athleteNames.map((name, i) => ({
     id: `ath_${i + 1}`,
     name,
     playerId: `MFC-${(i + 12).toString().padStart(3, '0')}`,
-    team: 'Marlborough FC Seniors',
+    team: 'Marlborough FC',
+    squad: athleteSquads[i],
     position: ['Forward', 'Midfield', 'Defender', 'Forward', 'Midfield', 'Defender', 'Goalkeeper', 'Midfield'][i],
     injuryStatus: injuryStatus[i],
     injuryNote: injuryNotes[i],
-    profile: profileExtras[i]
+    profile: profileExtras[i],
+    contactSharing: contactSharingDefaults[i]
   }));
+
+  // Independent / cross-club athletes — these don't belong to Marlborough FC.
+  // They demonstrate the mass-market case: athletes who hire staff individually.
+  teamAthletes.push(
+    {
+      id: 'ath_adam',
+      name: 'Adam Reeves',
+      playerId: null,
+      team: null,  // independent
+      position: 'Marathon runner',
+      injuryStatus: 'available',
+      injuryNote: null,
+      profile: {
+        dateOfBirth: '1989-06-12',
+        sex: 'M', height: 178, weight: 74,
+        primarySport: 'Distance running',
+        contactPhone: '+61 412 555 202',
+        contactEmail: 'sc@marlborough.fc',
+        emergencyName: 'Kate Reeves',
+        emergencyRelation: 'Partner',
+        emergencyPhone: '+61 412 333 891',
+        gpName: 'Dr. Lewis Tran',
+        gpClinic: 'Northcote Family Practice',
+        gpPhone: '+61 3 9489 4422'
+      },
+      contactSharing: { phone: true, email: true, emergencyContact: false, gp: false, notes: '' },
+      ownerUserId: 'usr_sc'  // this athlete profile is owned by Adam's user account
+    },
+    {
+      id: 'ath_priya',
+      name: 'Priya Naidu',
+      playerId: null,
+      team: null,
+      position: 'Trail runner',
+      injuryStatus: 'available',
+      injuryNote: null,
+      profile: {
+        dateOfBirth: '1995-03-22',
+        sex: 'F', height: 165, weight: 56,
+        primarySport: 'Trail / ultra running',
+        contactPhone: '+61 423 778 105',
+        contactEmail: 'priya.naidu@example.com',
+        emergencyName: 'Vikram Naidu',
+        emergencyRelation: 'Brother',
+        emergencyPhone: '+61 412 998 776',
+        gpName: 'Dr. Mei Tan',
+        gpClinic: 'Coastal Health Group',
+        gpPhone: '+61 3 9521 0099'
+      },
+      contactSharing: { phone: true, email: true, emergencyContact: true, gp: true, notes: 'Training for Buffalo Stampede ultra in November.' },
+      ownerUserId: 'usr_priya'
+    },
+    {
+      id: 'ath_felix',
+      name: 'Felix Yamamoto',
+      playerId: null,
+      team: null,
+      position: 'Hybrid athlete',
+      injuryStatus: 'modified',
+      injuryNote: 'L shoulder impingement — rehab phase',
+      profile: {
+        dateOfBirth: '1992-11-04',
+        sex: 'M', height: 182, weight: 86,
+        primarySport: 'Hybrid (strength + endurance)',
+        contactPhone: '+61 401 220 533',
+        contactEmail: 'felix.y@example.com',
+        emergencyName: 'Hana Yamamoto',
+        emergencyRelation: 'Spouse',
+        emergencyPhone: '+61 412 660 117',
+        gpName: 'Dr. Nadia Hassan',
+        gpClinic: 'Brunswick Sports Medicine',
+        gpPhone: '+61 3 9387 2210'
+      },
+      contactSharing: { phone: true, email: true, emergencyContact: true, gp: true, notes: '' },
+      ownerUserId: 'usr_felix'
+    }
+  );
 
   const teamWorkouts = [];
   const teamWellness = [];
@@ -611,6 +794,30 @@ const generateSeedData = () => {
   let s = 1;
   const rand = () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
 
+  // Session-type vocabulary per sport context — keeps the data plausible
+  // for the independent athletes who aren't doing team football.
+  const sessionTypeFor = (athlete, dow) => {
+    const sport = athlete.profile?.primarySport || '';
+    if (sport.includes('running')) {
+      // Distance / trail runners: long run on Sat, tempo Tue/Thu, easy other days
+      if (dow === 6) return 'Long run';
+      if (dow === 2 || dow === 4) return 'Tempo run';
+      if (dow === 1 || dow === 5) return 'Easy run';
+      return 'Easy run';
+    }
+    if (sport.toLowerCase().includes('hybrid')) {
+      // Hybrid: alternating strength + conditioning
+      if (dow === 1 || dow === 4) return 'Strength';
+      if (dow === 2 || dow === 5) return 'Conditioning';
+      if (dow === 6) return 'Long ride';
+      return 'Active recovery';
+    }
+    // Default football vocabulary
+    if (dow === 2 || dow === 4) return 'Team Training';
+    if (dow === 6) return 'Match';
+    return 'Strength';
+  };
+
   teamAthletes.forEach((ath, idx) => {
     const baseRPE = 5 + (idx % 3);
     const baseDur = 60 + (idx % 4) * 15;
@@ -619,6 +826,7 @@ const generateSeedData = () => {
     const poorWellness = idx === 3 || idx === 1;
     const unavailableSince = ath.injuryStatus === 'unavailable' ? 6 : null; // no sessions in last N days
     const modifiedReducedLoad = ath.injuryStatus === 'modified';
+    const isRunner = ath.profile?.primarySport?.includes('running');
 
     for (let i = 27; i >= 0; i--) {
       const d = new Date(baseDate);
@@ -642,7 +850,7 @@ const generateSeedData = () => {
           id: `w_${ath.id}_${ds}`,
           athleteId: ath.id,
           date: ds,
-          type: dow === 2 || dow === 4 ? 'Team Training' : dow === 6 ? 'Match' : 'Strength',
+          type: sessionTypeFor(ath, dow),
           duration: dur,
           rpe,
           source: 'manual',
@@ -650,7 +858,9 @@ const generateSeedData = () => {
           // GPS / HR data — populated for running-based sessions
           // (skip 'Strength' sessions, no GPS for gym work)
           ...(dow !== 1 && dow !== 5 ? {
-            distanceM:           Math.round(4500 + rand() * 4500 + (dow === 6 ? 2000 : 0)),
+            distanceM:           isRunner
+              ? Math.round((dow === 6 ? 24000 : 8000) + rand() * (dow === 6 ? 8000 : 4000))
+              : Math.round(4500 + rand() * 4500 + (dow === 6 ? 2000 : 0)),
             highSpeedDistanceM:  Math.round(280 + rand() * 380),
             sprintDistanceM:     Math.round(90 + rand() * 160),
             sprintEfforts:       Math.round(8 + rand() * 18),
@@ -995,22 +1205,41 @@ const generateSeedData = () => {
   const teamUsers = [
     // Staff
     { id: 'usr_admin',   name: 'Sarah Voss',     email: 'admin@marlborough.fc',    role: 'club_admin',
-      title: 'Club Administrator', orgRole: 'admin', isStaff: true, avatar: 'SV' },
+      title: 'Club Administrator', orgRole: 'admin', isStaff: true, avatar: 'SV',
+      phone: '+61 412 555 201',
+      contactSharing: { phone: true, email: true }, contactNote: 'Office hours, Mon–Fri.' },
     { id: 'usr_sc',      name: 'Adam Reeves',    email: 'sc@marlborough.fc',       role: 'sc_coach',
-      title: 'Head of S&C',         orgRole: 'coach', isStaff: true, avatar: 'AR' },
+      title: 'Head of S&C',         orgRole: 'coach', isStaff: true, avatar: 'AR',
+      phone: '+61 412 555 202',
+      contactSharing: { phone: true, email: true },
+      // Adam is also an athlete — runs marathons. Both roles on one user.
+      athleteId: 'ath_adam' },
     { id: 'usr_physio',  name: 'Dr. Anika Patel',email: 'physio@marlborough.fc',   role: 'physio',
-      title: 'Club Physio',         orgRole: 'clinician', isStaff: true, avatar: 'AP' },
+      title: 'Club Physio',         orgRole: 'clinician', isStaff: true, avatar: 'AP',
+      phone: '+61 412 555 203',
+      contactSharing: { phone: true, email: true }, contactNote: 'Clinic Tue/Thu. Urgent: call.' },
     { id: 'usr_consult', name: 'Jordan Hayes',   email: 'consultant@apex.co',      role: 'consultant',
-      title: 'External Consultant', orgRole: 'consultant', isStaff: true, avatar: 'JH' },
+      title: 'External Consultant', orgRole: 'consultant', isStaff: true, avatar: 'JH',
+      phone: '+61 412 555 204',
+      contactSharing: { phone: false, email: true }, contactNote: 'Best by email.' },
     { id: 'usr_coach',   name: 'Mark Connolly',  email: 'coach@marlborough.fc',    role: 'head_coach',
-      title: 'Head Coach',          orgRole: 'coach', isStaff: true, avatar: 'MC' },
+      title: 'Head Coach',          orgRole: 'coach', isStaff: true, avatar: 'MC',
+      phone: '+61 412 555 205',
+      contactSharing: { phone: true, email: true } },
     // Athletes (self-link accounts) — only some athletes have claimed accounts
     { id: 'usr_tom',     name: 'Tom Mercer',     email: 'tom.mercer@example.com',  role: 'athlete',
       athleteId: 'ath_1', isStaff: false, avatar: 'TM' },
     { id: 'usr_liam',    name: 'Liam Hartley',   email: 'liam.hartley@example.com',role: 'athlete',
       athleteId: 'ath_2', isStaff: false, avatar: 'LH' },
     { id: 'usr_mia',     name: 'Mia Pereira',    email: 'mia.pereira@example.com', role: 'athlete',
-      athleteId: 'ath_6', isStaff: false, avatar: 'MP' }
+      athleteId: 'ath_6', isStaff: false, avatar: 'MP' },
+    // Independent athletes — no club affiliation. Mass-market users.
+    { id: 'usr_priya',   name: 'Priya Naidu',    email: 'priya.naidu@example.com', role: 'athlete',
+      athleteId: 'ath_priya', isStaff: false, avatar: 'PN',
+      independent: true },
+    { id: 'usr_felix',   name: 'Felix Yamamoto', email: 'felix.y@example.com',     role: 'athlete',
+      athleteId: 'ath_felix', isStaff: false, avatar: 'FY',
+      independent: true }
   ];
 
   // Athlete links — who can access whose data, with what permissions
@@ -1018,10 +1247,13 @@ const generateSeedData = () => {
   // The physio is linked to all athletes (medical scope).
   // The consultant is linked to a subset (Tom, Liam, Noah only — partial engagement).
   // Each athlete has a self-link if they have an account.
+  // Independent athletes (Adam, Priya, Felix) are NOT linked to club staff by default —
+  // their access comes from explicit cross-club seeded links below.
   const teamAthleteLinks = [];
+  const clubAthletes = teamAthletes.filter(a => a.team); // skip independents
 
   // S&C coach: full squad
-  teamAthletes.forEach(a => {
+  clubAthletes.forEach(a => {
     teamAthleteLinks.push({
       id: `lnk_sc_${a.id}`,
       athleteId: a.id,
@@ -1035,7 +1267,7 @@ const generateSeedData = () => {
   });
 
   // Head coach: full squad
-  teamAthletes.forEach(a => {
+  clubAthletes.forEach(a => {
     teamAthleteLinks.push({
       id: `lnk_hc_${a.id}`,
       athleteId: a.id,
@@ -1049,7 +1281,7 @@ const generateSeedData = () => {
   });
 
   // Physio: full squad with medical scope
-  teamAthletes.forEach(a => {
+  clubAthletes.forEach(a => {
     teamAthleteLinks.push({
       id: `lnk_ph_${a.id}`,
       athleteId: a.id,
@@ -1078,7 +1310,7 @@ const generateSeedData = () => {
   });
 
   // Club admin: link only for roster management (no data access by default)
-  teamAthletes.forEach(a => {
+  clubAthletes.forEach(a => {
     teamAthleteLinks.push({
       id: `lnk_ad_${a.id}`,
       athleteId: a.id,
@@ -1093,9 +1325,12 @@ const generateSeedData = () => {
 
   // Self-links for athletes with accounts
   [
-    { userId: 'usr_tom',  athleteId: 'ath_1' },
-    { userId: 'usr_liam', athleteId: 'ath_2' },
-    { userId: 'usr_mia',  athleteId: 'ath_6' }
+    { userId: 'usr_tom',   athleteId: 'ath_1' },
+    { userId: 'usr_liam',  athleteId: 'ath_2' },
+    { userId: 'usr_mia',   athleteId: 'ath_6' },
+    { userId: 'usr_sc',    athleteId: 'ath_adam' },   // Adam manages his own athlete profile
+    { userId: 'usr_priya', athleteId: 'ath_priya' },
+    { userId: 'usr_felix', athleteId: 'ath_felix' }
   ].forEach(({ userId, athleteId }) => {
     teamAthleteLinks.push({
       id: `lnk_self_${athleteId}`,
@@ -1106,6 +1341,31 @@ const generateSeedData = () => {
       permissions: { ...PERM_TEMPLATES.self },
       acceptedAt: offsetDate(-60),
       revokedAt: null
+    });
+  });
+
+  // Cross-club / private practice links — demonstrate that staff work across orgs.
+  // Dr. Patel sees Priya & Felix as private clients (not Marlborough FC).
+  // Jordan Hayes consults on Priya's ultra prep.
+  [
+    { userId: 'usr_physio',  athleteId: 'ath_priya', role: 'physio',
+      permissions: { ...PERM_TEMPLATES.physio }, accepted: -45 },
+    { userId: 'usr_physio',  athleteId: 'ath_felix', role: 'physio',
+      permissions: { ...PERM_TEMPLATES.physio }, accepted: -20 },
+    { userId: 'usr_consult', athleteId: 'ath_priya', role: 'consultant',
+      permissions: { ...PERM_TEMPLATES.consultant }, accepted: -30, expires: 60 }
+  ].forEach((l, i) => {
+    teamAthleteLinks.push({
+      id: `lnk_cross_${i}`,
+      athleteId: l.athleteId,
+      userId: l.userId,
+      role: l.role,
+      status: 'active',
+      permissions: l.permissions,
+      acceptedAt: offsetDate(l.accepted),
+      expiresAt: l.expires ? offsetDate(l.expires) : null,
+      revokedAt: null,
+      invitedByAthlete: true  // these were athlete-initiated invites
     });
   });
 
@@ -1265,10 +1525,13 @@ const Bars = ({ data, max, height = 60 }) => {
 // ATHLETE APP
 // ============================================================
 function AthleteApp({ currentUser, demoAthleteId, auditLog, recordAudit, onSwitchView, onOpenSwitcher, onLogout }) {
-  const [view, setView] = useState('home'); // home | logWorkout | wellness | rpePrompt | history | files
+  const [view, setView] = useState('home'); // home | logWorkout | wellness | rpePrompt | history | files | editWorkout
+  const [editingWorkout, setEditingWorkout] = useState(null);
   const [workouts, setWorkouts] = useState([]);
   const [checkins, setCheckins] = useState([]);
   const [files, setFiles] = useState([]);
+  const [injuries, setInjuries] = useState([]);
+  const [editingInjury, setEditingInjury] = useState(null);
   const [links, setLinks] = useState([]);
   const [demoAthlete, setDemoAthlete] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1282,12 +1545,14 @@ function AthleteApp({ currentUser, demoAthleteId, auditLog, recordAudit, onSwitc
       setWorkouts(seed.teamWorkouts.filter(w => w.athleteId === demoAthleteId));
       setCheckins(seed.teamWellness.filter(c => c.athleteId === demoAthleteId));
       setFiles((seed.teamFiles || []).filter(f => f.athleteId === demoAthleteId));
+      setInjuries((seed.teamInjuries || []).filter(i => i.athleteId === demoAthleteId));
       setDemoAthlete(seed.teamAthletes.find(a => a.id === demoAthleteId) || null);
     } else {
       // Fresh start mode — empty arrays, in-memory only
       setWorkouts([]);
       setCheckins([]);
       setFiles([]);
+      setInjuries([]);
       setDemoAthlete(null);
     }
     setLoading(false);
@@ -1338,9 +1603,56 @@ function AthleteApp({ currentUser, demoAthleteId, auditLog, recordAudit, onSwitc
   };
 
   const saveWorkout = (w) => {
-    const newEntry = { ...w, id: `w_${Date.now()}` };
-    setWorkouts([...workouts, newEntry]);
-    showToast('Session logged');
+    if (w.id) {
+      // Editing existing workout
+      setWorkouts(workouts.map(x => x.id === w.id ? { ...x, ...w } : x));
+      showToast('Session updated');
+    } else {
+      // New workout
+      const newEntry = { ...w, id: `w_${Date.now()}` };
+      setWorkouts([...workouts, newEntry]);
+      showToast(w.date === today() ? 'Session logged' : 'Past session added');
+    }
+  };
+
+  const deleteWorkout = (id) => {
+    setWorkouts(workouts.filter(w => w.id !== id));
+    showToast('Session deleted');
+  };
+
+  const saveInjury = (inj) => {
+    if (inj.id) {
+      // Editing existing
+      setInjuries(injuries.map(x => x.id === inj.id ? { ...x, ...inj } : x));
+      showToast('Injury updated');
+    } else {
+      const myAthleteId = demoAthleteId || currentUser?.athleteId;
+      const newEntry = {
+        ...inj,
+        id: `inj_${Date.now()}`,
+        athleteId: myAthleteId,
+        reportedOn: today(),
+        reportedBy: currentUser?.name || 'Self-reported',
+        selfReported: true,
+        status: inj.status || 'out',
+        // Default RTP progression for an athlete self-report — a generic ladder.
+        // Staff can customise once they see it.
+        rtpProgress: inj.rtpProgress || [
+          { stage: 'Pain settled at rest', achieved: false, date: null },
+          { stage: 'Full pain-free range of motion', achieved: false, date: null },
+          { stage: 'Strength symmetry restored', achieved: false, date: null },
+          { stage: 'Modified training tolerated', achieved: false, date: null },
+          { stage: 'Cleared for full training', achieved: false, date: null },
+          { stage: 'Cleared for match / competition', achieved: false, date: null }
+        ]
+      };
+      setInjuries([newEntry, ...injuries]);
+      showToast('Injury logged — staff will be notified');
+    }
+  };
+
+  const updateInjury = (id, patch) => {
+    setInjuries(injuries.map(i => i.id === id ? { ...i, ...patch } : i));
   };
 
   const saveCheckin = (c) => {
@@ -1467,19 +1779,75 @@ function AthleteApp({ currentUser, demoAthleteId, auditLog, recordAudit, onSwitc
           />
         </div>
 
-        {/* Coach view toggle — only if user is staff */}
+        {/* Dual-identity mode switcher — shown when the user is staff */}
         {currentUser?.isStaff && (
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-            <button onClick={onSwitchView} style={styles.viewToggle}>
-              Coach view →
+          <div style={styles.dualModeSwitcher}>
+            <button style={{ ...styles.dualModeBtn, ...styles.dualModeBtnActive }}>
+              <span style={styles.dualModeBtnIcon}>◐</span>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={styles.dualModeBtnLabel}>My training</div>
+                <div style={styles.dualModeBtnSub}>Athlete view</div>
+              </div>
+            </button>
+            <button onClick={onSwitchView} style={styles.dualModeBtn}>
+              <span style={{ ...styles.dualModeBtnIcon, opacity: 0.5 }}>○</span>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={styles.dualModeBtnLabel}>Practitioner</div>
+                <div style={styles.dualModeBtnSub}>{currentUser.title || ROLE_LABELS[currentUser.role]}</div>
+              </div>
             </button>
           </div>
         )}
 
         <div style={styles.aGreet}>
           <div style={styles.aDay}>{new Date().toLocaleDateString('en-AU', { weekday: 'long' })}</div>
-          <h1 style={styles.aHello}>How was today?</h1>
+          <h1 style={styles.aHello}>
+            {workouts.length === 0 && checkins.length === 0
+              ? `Welcome, ${(currentUser?.name || '').split(' ')[0] || 'there'}`
+              : 'How was today?'}
+          </h1>
         </div>
+
+        {/* First-run welcome — only shown to brand-new athletes */}
+        {workouts.length === 0 && checkins.length === 0 && (
+          <div style={styles.firstRunCard}>
+            <div style={styles.firstRunHead}>
+              <div style={styles.firstRunIcon}>◐</div>
+              <div>
+                <div style={styles.firstRunTitle}>Let's get you set up</div>
+                <div style={styles.firstRunSubtitle}>Three quick things to do first</div>
+              </div>
+            </div>
+
+            <div style={styles.firstRunStep}>
+              <div style={styles.firstRunStepNum}>1</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={styles.firstRunStepTitle}>Log your first workout</div>
+                <div style={styles.firstRunStepDesc}>Takes about 15 seconds. Manual or import from a CSV.</div>
+              </div>
+            </div>
+
+            <div style={styles.firstRunStep}>
+              <div style={styles.firstRunStepNum}>2</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={styles.firstRunStepTitle}>Quick wellness check-in</div>
+                <div style={styles.firstRunStepDesc}>How are you feeling today? 10 seconds, six sliders.</div>
+              </div>
+            </div>
+
+            <div style={styles.firstRunStep}>
+              <div style={styles.firstRunStepNum}>3</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={styles.firstRunStepTitle}>Invite your support team</div>
+                <div style={styles.firstRunStepDesc}>Physio, coach, doctor — share your data with anyone helping you train.</div>
+              </div>
+            </div>
+
+            <p style={styles.firstRunNote}>
+              Tempo gets useful after a week or so of data — the more sessions and check-ins you log, the better the picture becomes.
+            </p>
+          </div>
+        )}
 
         {/* Today checklist */}
         <div style={styles.aSection}>
@@ -1545,6 +1913,9 @@ function AthleteApp({ currentUser, demoAthleteId, auditLog, recordAudit, onSwitc
           <button style={styles.aHistoryLink} onClick={() => setView('history')}>
             History →
           </button>
+          <button style={styles.aHistoryLink} onClick={() => setView('injuries')}>
+            Injuries{injuries.filter(i => i.status !== 'returned').length > 0 ? ` (${injuries.filter(i => i.status !== 'returned').length} active)` : ''} →
+          </button>
           <button style={styles.aHistoryLink} onClick={() => setView('files')}>
             Files →
           </button>
@@ -1573,7 +1944,66 @@ function AthleteApp({ currentUser, demoAthleteId, auditLog, recordAudit, onSwitc
 
   // ---- HISTORY ----
   if (view === 'history') {
-    return <History workouts={workouts} checkins={checkins} onBack={() => setView('home')} />;
+    return (
+      <History
+        workouts={workouts}
+        checkins={checkins}
+        onBack={() => setView('home')}
+        onEditWorkout={(w) => { setEditingWorkout(w); setView('editWorkout'); }}
+        onAddPast={() => { setEditingWorkout(null); setView('logWorkout'); }}
+      />
+    );
+  }
+
+  // ---- EDIT WORKOUT ----
+  if (view === 'editWorkout') {
+    return (
+      <LogWorkout
+        existing={editingWorkout}
+        onBack={() => { setEditingWorkout(null); setView('history'); }}
+        onSave={async (w) => {
+          await saveWorkout(w);
+          setEditingWorkout(null);
+          setView('history');
+        }}
+        onDelete={async (id) => {
+          await deleteWorkout(id);
+          setEditingWorkout(null);
+          setView('history');
+        }}
+      />
+    );
+  }
+
+  // ---- INJURIES (athlete view) ----
+  if (view === 'injuries') {
+    const seed = getSeedData();
+    return (
+      <AthleteInjuriesView
+        injuries={injuries}
+        onBack={() => setView('home')}
+        onReport={() => { setEditingInjury(null); setView('reportInjury'); }}
+        onUpdate={updateInjury}
+        currentUser={currentUser}
+        links={links}
+        allUsers={seed.teamUsers || []}
+      />
+    );
+  }
+
+  // ---- REPORT / EDIT SELF-INJURY ----
+  if (view === 'reportInjury') {
+    return (
+      <AthleteInjuryReportForm
+        existing={editingInjury}
+        onBack={() => { setEditingInjury(null); setView('injuries'); }}
+        onSave={async (inj) => {
+          await saveInjury(inj);
+          setEditingInjury(null);
+          setView('injuries');
+        }}
+      />
+    );
   }
 
   // ---- FILES ----
@@ -1652,12 +2082,15 @@ function CheckRow({ done, label, onClick }) {
   );
 }
 
-function LogWorkout({ onBack, onSave }) {
-  const [type, setType] = useState('Run');
-  const [duration, setDuration] = useState(45);
-  const [rpe, setRpe] = useState(5);
-  const [note, setNote] = useState('');
+function LogWorkout({ existing, onBack, onSave, onDelete }) {
+  const [type, setType] = useState(existing?.type || 'Run');
+  const [duration, setDuration] = useState(existing?.duration ?? 45);
+  const [rpe, setRpe] = useState(existing?.rpe ?? 5);
+  const [note, setNote] = useState(existing?.note || '');
+  const [date, setDate] = useState(existing?.date || today());
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
+  const isEditing = !!existing;
   const types = ['Run', 'Strength', 'Team Training', 'Match', 'Cycle', 'Swim', 'Other'];
 
   const rpeDesc = (v) => {
@@ -1672,8 +2105,28 @@ function LogWorkout({ onBack, onSave }) {
 
   return (
     <div style={styles.athleteFrame}>
-      <SubHeader title="Log session" onBack={onBack} />
+      <SubHeader
+        title={isEditing ? 'Edit session' : 'Log session'}
+        onBack={onBack}
+      />
       <div style={styles.subBody}>
+
+        <Label>Date</Label>
+        <input
+          type="date"
+          value={date}
+          max={today()}
+          onChange={e => setDate(e.target.value)}
+          style={styles.textInput}
+        />
+        {date !== today() && (
+          <div style={styles.pastSessionHint}>
+            {isEditing
+              ? `Editing a session from ${fmtDate(date)}`
+              : `Backfilling a session from ${fmtDate(date)}`}
+          </div>
+        )}
+
         <Label>Activity</Label>
         <div style={styles.chipRow}>
           {types.map(t => (
@@ -1721,9 +2174,47 @@ function LogWorkout({ onBack, onSave }) {
 
         <button
           style={styles.primaryBtn}
-          onClick={() => onSave({ type, duration, rpe, note, date: today(), source: 'manual' })}>
-          Save session
+          onClick={() => onSave({
+            ...(existing || {}),
+            type, duration, rpe, note, date,
+            source: existing?.source || 'manual',
+            ...(isEditing ? { editedAt: new Date().toISOString() } : {})
+          })}>
+          {isEditing ? 'Save changes' : 'Save session'}
         </button>
+
+        {isEditing && onDelete && (
+          <>
+            {confirmDelete ? (
+              <div style={styles.deleteConfirm}>
+                <div style={styles.deleteConfirmText}>
+                  Delete this session permanently?
+                </div>
+                <div style={styles.deleteConfirmActions}>
+                  <button
+                    style={styles.deleteConfirmCancel}
+                    onClick={() => setConfirmDelete(false)}
+                  >
+                    Keep
+                  </button>
+                  <button
+                    style={styles.deleteConfirmConfirm}
+                    onClick={() => onDelete(existing.id)}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                style={styles.dangerLinkBtn}
+                onClick={() => setConfirmDelete(true)}
+              >
+                Delete this session
+              </button>
+            )}
+          </>
+        )}
       </div>
     </div>
   );
@@ -1779,7 +2270,7 @@ function Wellness({ existing, onBack, onSave }) {
   );
 }
 
-function History({ workouts, checkins, onBack }) {
+function History({ workouts, checkins, onBack, onEditWorkout, onAddPast }) {
   // Merge and sort
   const items = useMemo(() => {
     const ws = workouts.map(w => ({ kind: 'workout', ...w }));
@@ -1791,14 +2282,36 @@ function History({ workouts, checkins, onBack }) {
     <div style={styles.athleteFrame}>
       <SubHeader title="History" onBack={onBack} />
       <div style={styles.subBody}>
+
+        {onAddPast && (
+          <button
+            style={styles.histAddPastBtn}
+            onClick={onAddPast}
+          >
+            + Add past session
+          </button>
+        )}
+
         {items.length === 0 && (
           <div style={{ textAlign: 'center', color: '#8a8275', padding: 40 }}>
             Nothing logged yet.
           </div>
         )}
         {items.map((it, i) => (
-          <div key={i} style={styles.histRow}>
-            <div style={styles.histDate}>{fmtDate(it.date)}</div>
+          <div
+            key={i}
+            style={{
+              ...styles.histRow,
+              ...(it.kind === 'workout' && onEditWorkout ? styles.histRowTap : {})
+            }}
+            onClick={() => {
+              if (it.kind === 'workout' && onEditWorkout) onEditWorkout(it);
+            }}
+          >
+            <div style={styles.histDate}>
+              {fmtDate(it.date)}
+              {it.editedAt && <div style={styles.histEditedTag}>edited</div>}
+            </div>
             {it.kind === 'workout' ? (
               <div style={styles.histBody}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
@@ -1808,6 +2321,9 @@ function History({ workouts, checkins, onBack }) {
                 <div style={styles.histMeta}>
                   {it.duration} min · RPE {it.rpe}{it.note ? ` · ${it.note}` : ''}
                 </div>
+                {onEditWorkout && (
+                  <div style={styles.histTapHint}>Tap to edit</div>
+                )}
               </div>
             ) : (
               <div style={styles.histBody}>
@@ -1827,6 +2343,571 @@ function History({ workouts, checkins, onBack }) {
 // ============================================================
 // AthleteFiles — athlete's own file area
 // ============================================================
+// ============================================================
+// AthleteInjuriesView — athlete's own view of their injuries
+// Athletes can see all their own injuries (active and resolved),
+// log a new self-report, and contribute to RTP milestones.
+// ============================================================
+function AthleteInjuriesView({ injuries, onBack, onReport, onUpdate, currentUser, links, allUsers }) {
+  const active = injuries.filter(i => i.status !== 'returned');
+  const resolved = injuries.filter(i => i.status === 'returned');
+
+  return (
+    <div style={styles.athleteFrame}>
+      <SubHeader title="Injuries" onBack={onBack} />
+      <div style={styles.subBody}>
+
+        <button style={styles.histAddPastBtn} onClick={onReport}>
+          + Report an injury
+        </button>
+
+        <p style={styles.aInjuriesIntro}>
+          Logging an injury here lets the staff helping you know what's going on,
+          so they can support you sooner. You can keep adding detail later.
+        </p>
+
+        {active.length === 0 && resolved.length === 0 && (
+          <div style={{ textAlign: 'center', color: '#8a8275', padding: 40 }}>
+            No injuries logged.
+          </div>
+        )}
+
+        {active.length > 0 && (
+          <>
+            <div style={styles.aInjuriesGroupHead}>Active</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {active.map(inj => (
+                <AthleteInjuryCard
+                  key={inj.id}
+                  inj={inj}
+                  currentUser={currentUser}
+                  links={links}
+                  allUsers={allUsers}
+                  onUpdate={(patch) => onUpdate(inj.id, patch)}
+                />
+              ))}
+            </div>
+          </>
+        )}
+
+        {resolved.length > 0 && (
+          <>
+            <div style={{ ...styles.aInjuriesGroupHead, marginTop: 24 }}>Resolved</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {resolved.map(inj => (
+                <AthleteInjuryCard
+                  key={inj.id}
+                  inj={inj}
+                  currentUser={currentUser}
+                  links={links}
+                  allUsers={allUsers}
+                  onUpdate={(patch) => onUpdate(inj.id, patch)}
+                />
+              ))}
+            </div>
+          </>
+        )}
+
+      </div>
+    </div>
+  );
+}
+
+
+// Athlete-friendly summary card for one injury
+function AthleteInjuryCard({ inj, currentUser, links, allUsers, onUpdate }) {
+  const [expanded, setExpanded] = useState(false);
+  const [confirmStageUndo, setConfirmStageUndo] = useState(null);
+  const days = Math.round((new Date() - new Date(inj.occurredOn)) / 86400000);
+  const dotColor = inj.status === 'returned' ? '#3a8a4d'
+                : inj.status === 'modified' ? '#d4a017'
+                : '#c8472b';
+
+  const statusLabel = inj.status === 'returned' ? 'Resolved'
+                    : inj.status === 'modified' ? 'Modified training'
+                    : 'Out';
+
+  const rtpDone = inj.rtpProgress ? inj.rtpProgress.filter(s => s.achieved).length : 0;
+  const rtpTotal = inj.rtpProgress ? inj.rtpProgress.length : 0;
+
+  const toggleStage = (index) => {
+    const stage = inj.rtpProgress[index];
+    if (stage.achieved) {
+      setConfirmStageUndo(index);
+      return;
+    }
+    const newProgress = inj.rtpProgress.map((s, i) =>
+      i === index ? {
+        ...s, achieved: true, date: today(),
+        completedBy: currentUser?.name || 'Self'
+      } : s
+    );
+    onUpdate({ rtpProgress: newProgress });
+  };
+
+  const confirmUndoStage = () => {
+    const newProgress = inj.rtpProgress.map((s, i) =>
+      i === confirmStageUndo ? { ...s, achieved: false, date: null, completedBy: null } : s
+    );
+    onUpdate({ rtpProgress: newProgress });
+    setConfirmStageUndo(null);
+  };
+
+  return (
+    <div style={styles.aInjCard}>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        style={styles.aInjCardHead}
+      >
+        <span style={{ ...styles.aTrafficDot, background: dotColor, marginTop: 4, marginRight: 10 }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={styles.aInjCardTitle}>
+            {inj.side ? `${inj.side} ` : ''}{inj.bodyRegion}
+          </div>
+          <div style={styles.aInjCardMeta}>
+            {statusLabel} · day {days}
+            {inj.selfReported && <span style={styles.aInjSelfTag}>self-reported</span>}
+          </div>
+        </div>
+        <ChevronRight
+          size={16}
+          color="#8a8275"
+          style={{ transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}
+        />
+      </button>
+
+      {expanded && (
+        <div style={styles.aInjCardBody}>
+          {/* What happened — athlete-facing summary */}
+          {(inj.athleteDescription || inj.mechanism) && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={styles.aInjLabel}>What happened</div>
+              <div style={styles.aInjValue}>
+                {inj.athleteDescription || `${inj.mechanism}${inj.activity ? ' during ' + inj.activity.toLowerCase() : ''}`}
+              </div>
+            </div>
+          )}
+
+          {inj.diagnosis && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={styles.aInjLabel}>Diagnosis from clinician</div>
+              <div style={styles.aInjValue}>{inj.diagnosis}</div>
+              {inj.reportedBy && (
+                <div style={styles.aInjSubMeta}>— {inj.reportedBy}</div>
+              )}
+            </div>
+          )}
+
+          {/* RTP progress — interactive */}
+          {rtpTotal > 0 && (
+            <div style={styles.aInjMilestones}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+                <div style={styles.aInjLabel}>Recovery milestones</div>
+                <div style={{ fontFamily: '"Fraunces", Georgia, serif', fontSize: 13 }}>
+                  {rtpDone}/{rtpTotal}
+                </div>
+              </div>
+              {inj.rtpProgress.map((s, i) => (
+                <div key={i}>
+                  <button
+                    onClick={() => toggleStage(i)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '10px 10px',
+                      width: '100%',
+                      background: s.achieved ? '#f5f1e8' : 'transparent',
+                      border: 'none', borderRadius: 6,
+                      cursor: 'pointer',
+                      fontFamily: 'inherit', textAlign: 'left',
+                      marginBottom: 4
+                    }}
+                  >
+                    <span style={{
+                      width: 20, height: 20, borderRadius: 5,
+                      border: s.achieved ? '2px solid #3a8a4d' : '2px solid #c8b894',
+                      background: s.achieved ? '#3a8a4d' : 'transparent',
+                      color: '#fdfbf5', display: 'inline-flex',
+                      alignItems: 'center', justifyContent: 'center',
+                      fontSize: 12, fontWeight: 700, flexShrink: 0
+                    }}>
+                      {s.achieved ? '✓' : ''}
+                    </span>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: s.achieved ? '#1a1a1a' : '#5a564d' }}>
+                      {s.stage}
+                    </span>
+                    {s.date && (
+                      <span style={{ fontSize: 10, color: '#8a8275', flexShrink: 0, textAlign: 'right' }}>
+                        {fmtShort(s.date)}
+                        {s.completedBy && (
+                          <div style={{ fontSize: 9, color: '#b8b1a0', marginTop: 1 }}>by {s.completedBy}</div>
+                        )}
+                      </span>
+                    )}
+                  </button>
+                  {confirmStageUndo === i && (
+                    <div style={styles.deleteConfirm}>
+                      <div style={styles.deleteConfirmText}>
+                        Untick "{s.stage}"? You can re-check it later.
+                      </div>
+                      <div style={styles.deleteConfirmActions}>
+                        <button
+                          style={styles.deleteConfirmCancel}
+                          onClick={() => setConfirmStageUndo(null)}
+                        >
+                          Keep
+                        </button>
+                        <button
+                          style={styles.deleteConfirmConfirm}
+                          onClick={confirmUndoStage}
+                        >
+                          Yes, untick
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+              <div style={styles.aInjMilestonesNote}>
+                You and your staff can check these off together.
+                Anyone with edit access can contribute.
+              </div>
+            </div>
+          )}
+
+          {/* What you've tried */}
+          {inj.interventions && (
+            <div style={{ marginTop: 14 }}>
+              <div style={styles.aInjLabel}>What's been tried</div>
+              <div style={styles.aInjValue}>{inj.interventions}</div>
+            </div>
+          )}
+
+          {/* Pain scale */}
+          {inj.painScale !== undefined && inj.painScale !== null && (
+            <div style={{ marginTop: 14 }}>
+              <div style={styles.aInjLabel}>Pain right now</div>
+              <div style={styles.aInjValue}>{inj.painScale}/10</div>
+            </div>
+          )}
+
+          {inj.expectedRTP && (
+            <div style={{ marginTop: 14 }}>
+              <div style={styles.aInjLabel}>Expected return</div>
+              <div style={styles.aInjValue}>{fmtShort(inj.expectedRTP)}</div>
+            </div>
+          )}
+
+          {/* Per-injury sharing controls */}
+          <InjurySharingControls
+            inj={inj}
+            links={links}
+            allUsers={allUsers}
+            onUpdate={onUpdate}
+          />
+
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ============================================================
+// InjurySharingControls — per-injury "who can see this" toggles
+// Layers on top of role-based permissions:
+//   - role grants medical access by default → toggle OFF excludes
+//   - role denies medical access by default → toggle ON includes
+// ============================================================
+function InjurySharingControls({ inj, links, allUsers, onUpdate }) {
+  const [expanded, setExpanded] = useState(false);
+
+  // Find all staff linked to this athlete with view_injuries permission
+  // (i.e. anyone who would see the injury exists at all)
+  const linkedStaff = (links || [])
+    .filter(l => l.athleteId === inj.athleteId && l.status === 'active' && l.role !== 'self')
+    .map(l => {
+      const user = (allUsers || []).find(u => u.id === l.userId);
+      if (!user) return null;
+      return { user, link: l };
+    })
+    .filter(Boolean)
+    .filter(({ link }) => link.permissions?.view_injuries);
+
+  if (linkedStaff.length === 0) return null;
+
+  const sharing = inj.sharing || {};
+  const excluded = sharing.excluded || [];
+  const included = sharing.included || [];
+
+  const togglePersonAccess = (userId, hasMedicalByDefault) => {
+    let newExcluded = [...excluded];
+    let newIncluded = [...included];
+    if (hasMedicalByDefault) {
+      // Default ON. Toggle: include in excluded list or remove
+      if (excluded.includes(userId)) {
+        newExcluded = newExcluded.filter(id => id !== userId);
+      } else {
+        newExcluded.push(userId);
+      }
+    } else {
+      // Default OFF. Toggle: include in included list or remove
+      if (included.includes(userId)) {
+        newIncluded = newIncluded.filter(id => id !== userId);
+      } else {
+        newIncluded.push(userId);
+      }
+    }
+    onUpdate({ sharing: { excluded: newExcluded, included: newIncluded } });
+  };
+
+  return (
+    <div style={styles.aInjSharing}>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        style={styles.aInjSharingHead}
+      >
+        <span style={styles.aInjLabel}>Who can see this injury</span>
+        <ChevronRight
+          size={14}
+          color="#8a8275"
+          style={{ transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}
+        />
+      </button>
+
+      {expanded && (
+        <div style={styles.aInjSharingBody}>
+          <p style={styles.aInjSharingHint}>
+            By default, your staff see this injury based on their role. You can adjust here
+            for this specific injury.
+          </p>
+          {linkedStaff.map(({ user, link }) => {
+            const hasMedicalByDefault = !!link.permissions?.view_medical;
+            const isExcluded = excluded.includes(user.id);
+            const isIncluded = included.includes(user.id);
+            const effectiveAccess = isExcluded ? false
+                                  : isIncluded ? true
+                                  : hasMedicalByDefault;
+            return (
+              <div key={user.id} style={styles.aInjSharingRow}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={styles.aInjSharingName}>{user.name}</div>
+                  <div style={styles.aInjSharingRole}>
+                    {user.title || user.role}
+                    {!hasMedicalByDefault && effectiveAccess && (
+                      <span style={styles.aInjSharingOverrideTag}> · medical access granted just for this</span>
+                    )}
+                    {hasMedicalByDefault && !effectiveAccess && (
+                      <span style={styles.aInjSharingOverrideTag}> · excluded from this injury</span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={() => togglePersonAccess(user.id, hasMedicalByDefault)}
+                  style={{
+                    ...styles.invitePermToggle,
+                    background: effectiveAccess ? '#1a1a1a' : '#e0d9c8'
+                  }}
+                  aria-label={effectiveAccess ? 'Has access' : 'No access'}
+                >
+                  <span style={{
+                    ...styles.invitePermToggleKnob,
+                    transform: effectiveAccess ? 'translateX(20px)' : 'translateX(2px)'
+                  }} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ============================================================
+// AthleteInjuryReportForm — athlete-friendly injury self-report
+// ============================================================
+function AthleteInjuryReportForm({ existing, onBack, onSave }) {
+  const [bodyRegion, setBodyRegion] = useState(existing?.bodyRegion || '');
+  const [side, setSide] = useState(existing?.side || '');
+  const [occurredOn, setOccurredOn] = useState(existing?.occurredOn || today());
+  const [athleteDescription, setAthleteDescription] = useState(existing?.athleteDescription || '');
+  const [whatYouFelt, setWhatYouFelt] = useState(existing?.whatYouFelt || '');
+  const [interventions, setInterventions] = useState(existing?.interventions || '');
+  const [painScale, setPainScale] = useState(existing?.painScale ?? 3);
+  const [stillTraining, setStillTraining] = useState(existing?.stillTraining ?? null);
+
+  const bodyRegions = [
+    'Head', 'Neck', 'Shoulder', 'Upper arm', 'Elbow', 'Forearm', 'Wrist', 'Hand',
+    'Chest', 'Upper back', 'Lower back',
+    'Hip / groin', 'Thigh (front)', 'Thigh (back)', 'Knee', 'Calf', 'Achilles', 'Ankle', 'Foot',
+    'Other'
+  ];
+
+  const sides = ['Left', 'Right', 'Both', 'N/A'];
+
+  const canSave = bodyRegion && athleteDescription.trim().length > 0;
+
+  return (
+    <div style={styles.athleteFrame}>
+      <SubHeader
+        title={existing ? 'Edit injury report' : 'Report an injury'}
+        onBack={onBack}
+      />
+      <div style={styles.subBody}>
+
+        <p style={styles.aInjFormIntro}>
+          Tell us what's going on. Don't worry about getting the wording perfect —
+          a clinician will work with you on the detail. The goal is to flag it now
+          so the team knows.
+        </p>
+
+        <Label>Where does it hurt?</Label>
+        <div style={styles.aInjRegionGrid}>
+          {bodyRegions.map(r => (
+            <button
+              key={r}
+              onClick={() => setBodyRegion(r)}
+              style={{
+                ...styles.aInjRegionBtn,
+                ...(bodyRegion === r ? styles.aInjRegionBtnActive : {})
+              }}
+            >
+              {r}
+            </button>
+          ))}
+        </div>
+
+        {bodyRegion && bodyRegion !== 'Other' && (
+          <>
+            <Label>Which side?</Label>
+            <div style={styles.aInjSideRow}>
+              {sides.map(s => (
+                <button
+                  key={s}
+                  onClick={() => setSide(s)}
+                  style={{
+                    ...styles.aInjSideBtn,
+                    ...(side === s ? styles.aInjSideBtnActive : {})
+                  }}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        <Label>When did it happen?</Label>
+        <input
+          type="date"
+          max={today()}
+          value={occurredOn}
+          onChange={e => setOccurredOn(e.target.value)}
+          style={styles.textInput}
+        />
+
+        <Label>What happened? <span style={{ color: '#8a8275', fontWeight: 400 }}>(in your own words)</span></Label>
+        <textarea
+          value={athleteDescription}
+          onChange={e => setAthleteDescription(e.target.value)}
+          placeholder="e.g. Felt a sharp pull in my hamstring sprinting in training yesterday — heard a small pop"
+          rows={3}
+          style={{ ...styles.textInput, resize: 'vertical', minHeight: 72 }}
+        />
+
+        <Label>What did it feel like? <span style={{ color: '#8a8275', fontWeight: 400 }}>(optional)</span></Label>
+        <textarea
+          value={whatYouFelt}
+          onChange={e => setWhatYouFelt(e.target.value)}
+          placeholder="Sharp / dull / pulling / burning / catching / unstable etc."
+          rows={2}
+          style={{ ...styles.textInput, resize: 'vertical', minHeight: 52 }}
+        />
+
+        <Label>How much does it hurt right now? <span style={{ color: '#8a8275', fontWeight: 400 }}>(0–10)</span></Label>
+        <div style={styles.rpeBigNum}>{painScale}</div>
+        <div style={styles.rpeDesc}>
+          {painScale === 0 ? 'No pain'
+            : painScale <= 2 ? 'Mild — barely noticeable'
+            : painScale <= 4 ? 'Mild discomfort'
+            : painScale <= 6 ? 'Moderate — distracting'
+            : painScale <= 8 ? 'Strong — hard to ignore'
+            : painScale === 9 ? 'Severe'
+            : 'Worst pain imaginable'}
+        </div>
+        <input
+          type="range" min="0" max="10" step="1"
+          value={painScale}
+          onChange={e => setPainScale(+e.target.value)}
+          style={styles.sliderAccent}
+        />
+        <div style={styles.rpeScale}>
+          <span>0</span><span>5</span><span>10</span>
+        </div>
+
+        <Label>Can you train through it right now?</Label>
+        <div style={styles.aInjSideRow}>
+          {[
+            { k: 'fully', l: 'Yes, normally' },
+            { k: 'modified', l: 'Yes, but modified' },
+            { k: 'no', l: "No, I'm out" }
+          ].map(o => (
+            <button
+              key={o.k}
+              onClick={() => setStillTraining(o.k)}
+              style={{
+                ...styles.aInjSideBtn,
+                ...(stillTraining === o.k ? styles.aInjSideBtnActive : {})
+              }}
+            >
+              {o.l}
+            </button>
+          ))}
+        </div>
+
+        <Label>Have you tried anything to help? <span style={{ color: '#8a8275', fontWeight: 400 }}>(optional)</span></Label>
+        <textarea
+          value={interventions}
+          onChange={e => setInterventions(e.target.value)}
+          placeholder="e.g. Ice, rest, foam rolling, anti-inflammatories, seen a physio…"
+          rows={2}
+          style={{ ...styles.textInput, resize: 'vertical', minHeight: 52 }}
+        />
+
+        <p style={styles.aInjFormNote}>
+          When you submit, this is visible to the staff you've shared injury access with.
+          They'll add clinical detail and update your milestones as you recover. You can
+          edit any of this later.
+        </p>
+
+        <button
+          style={{ ...styles.primaryBtn, opacity: canSave ? 1 : 0.4 }}
+          disabled={!canSave}
+          onClick={() => onSave({
+            ...(existing || {}),
+            bodyRegion,
+            side: side || 'N/A',
+            occurredOn,
+            athleteDescription,
+            whatYouFelt,
+            interventions,
+            painScale,
+            mechanism: 'Self-reported',
+            status: stillTraining === 'fully' ? 'returned'
+                  : stillTraining === 'modified' ? 'modified'
+                  : 'out',
+            severity: painScale >= 8 ? 4 : painScale >= 6 ? 3 : painScale >= 4 ? 2 : 1
+          })}
+        >
+          {existing ? 'Save changes' : 'Submit injury report'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
 function AthleteFiles({ files, onSave, onToggleShared, onDelete, onBack }) {
   const [showAdd, setShowAdd] = useState(false);
   const [filter, setFilter] = useState('all'); // all | mine | shared
@@ -2055,18 +3136,74 @@ function AthleteFiles({ files, onSave, onToggleShared, onDelete, onBack }) {
 // ============================================================
 function AthletePrivacy({ athleteId, currentUser, auditLog, links, onCreateLink, onRevokeLink, onBack }) {
   const [users, setUsers] = useState([]);
+  const [athletes, setAthletes] = useState([]);
   const [permTemplates, setPermTemplates] = useState({});
   const [confirmRevoke, setConfirmRevoke] = useState(null);
   const [showInvite, setShowInvite] = useState(false);
+  // Local edits to contact sharing prefs and profile contact fields
+  const [contactSharing, setContactSharing] = useState(null);
+  const [contactNote, setContactNote] = useState('');
+  const [editingPhone, setEditingPhone] = useState(false);
+  const [editingEmail, setEditingEmail] = useState(false);
+  const [phoneValue, setPhoneValue] = useState('');
+  const [emailValue, setEmailValue] = useState('');
 
   useEffect(() => {
     const seed = getSeedData();
     setUsers(seed.teamUsers || []);
+    setAthletes(seed.teamAthletes || []);
     setPermTemplates(seed.PERM_TEMPLATES || {});
   }, []);
 
   // The athlete this privacy screen is for
   const targetAthleteId = athleteId || currentUser?.athleteId;
+  const targetAthlete = athletes.find(a => a.id === targetAthleteId);
+
+  // Hydrate local contact state once we have the athlete
+  useEffect(() => {
+    if (targetAthlete && contactSharing === null) {
+      const share = targetAthlete.contactSharing || {};
+      setContactSharing({
+        phone: share.phone ?? true,
+        email: share.email ?? true,
+        emergencyContact: share.emergencyContact ?? false,
+        gp: share.gp ?? false
+      });
+      setContactNote(share.notes || '');
+      setPhoneValue(targetAthlete.profile?.contactPhone || '');
+      setEmailValue(targetAthlete.profile?.contactEmail || '');
+    }
+  }, [targetAthlete, contactSharing]);
+
+  const toggleShare = (key) => {
+    const next = { ...contactSharing, [key]: !contactSharing[key] };
+    setContactSharing(next);
+    // Mirror back to the shared seed so the staff Contacts view reflects it
+    if (targetAthlete) {
+      targetAthlete.contactSharing = {
+        ...targetAthlete.contactSharing,
+        [key]: next[key]
+      };
+    }
+  };
+
+  // Persist contact note edits back to the seed
+  useEffect(() => {
+    if (targetAthlete && contactSharing !== null) {
+      targetAthlete.contactSharing = {
+        ...targetAthlete.contactSharing,
+        notes: contactNote
+      };
+    }
+  }, [contactNote, targetAthlete, contactSharing]);
+
+  // Persist phone/email edits back to the seed
+  useEffect(() => {
+    if (targetAthlete && targetAthlete.profile) {
+      targetAthlete.profile.contactPhone = phoneValue;
+      targetAthlete.profile.contactEmail = emailValue;
+    }
+  }, [phoneValue, emailValue, targetAthlete]);
   if (!targetAthleteId) {
     return (
       <div style={styles.athleteFrame}>
@@ -2163,6 +3300,158 @@ function AthletePrivacy({ athleteId, currentUser, auditLog, links, onCreateLink,
             + Invite someone
           </button>
         </div>
+
+        {/* Contact sharing */}
+        {contactSharing && (
+          <div style={styles.privacySection}>
+            <div style={styles.privacySectionLabel}>
+              Contact details you share
+            </div>
+            <div style={styles.contactShareCard}>
+              <p style={styles.contactShareIntro}>
+                Linked staff can see whatever you share here. Toggle off anything you'd rather keep private.
+              </p>
+
+              {/* Phone */}
+              <div style={styles.contactShareRow}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={styles.contactShareRowLabel}>Phone number</div>
+                  {editingPhone ? (
+                    <input
+                      style={{ ...styles.perfInput, marginTop: 4 }}
+                      value={phoneValue}
+                      onChange={e => setPhoneValue(e.target.value)}
+                      onBlur={() => setEditingPhone(false)}
+                      placeholder="+61 4xx xxx xxx"
+                      autoFocus
+                    />
+                  ) : (
+                    <button
+                      onClick={() => setEditingPhone(true)}
+                      style={styles.contactShareValue}
+                    >
+                      {phoneValue || 'Add phone number'}
+                    </button>
+                  )}
+                </div>
+                <button
+                  onClick={() => toggleShare('phone')}
+                  style={{
+                    ...styles.invitePermToggle,
+                    background: contactSharing.phone ? '#1a1a1a' : '#e0d9c8'
+                  }}
+                  aria-label="Toggle phone sharing"
+                >
+                  <span style={{
+                    ...styles.invitePermToggleKnob,
+                    transform: contactSharing.phone ? 'translateX(20px)' : 'translateX(2px)'
+                  }} />
+                </button>
+              </div>
+
+              {/* Email */}
+              <div style={styles.contactShareRow}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={styles.contactShareRowLabel}>Email</div>
+                  {editingEmail ? (
+                    <input
+                      type="email"
+                      style={{ ...styles.perfInput, marginTop: 4 }}
+                      value={emailValue}
+                      onChange={e => setEmailValue(e.target.value)}
+                      onBlur={() => setEditingEmail(false)}
+                      placeholder="you@example.com"
+                      autoFocus
+                    />
+                  ) : (
+                    <button
+                      onClick={() => setEditingEmail(true)}
+                      style={styles.contactShareValue}
+                    >
+                      {emailValue || 'Add email'}
+                    </button>
+                  )}
+                </div>
+                <button
+                  onClick={() => toggleShare('email')}
+                  style={{
+                    ...styles.invitePermToggle,
+                    background: contactSharing.email ? '#1a1a1a' : '#e0d9c8'
+                  }}
+                  aria-label="Toggle email sharing"
+                >
+                  <span style={{
+                    ...styles.invitePermToggleKnob,
+                    transform: contactSharing.email ? 'translateX(20px)' : 'translateX(2px)'
+                  }} />
+                </button>
+              </div>
+
+              {/* Emergency contact */}
+              <div style={styles.contactShareRow}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={styles.contactShareRowLabel}>Emergency contact</div>
+                  <div style={styles.contactShareSub}>
+                    {targetAthlete?.profile?.emergencyName
+                      ? `${targetAthlete.profile.emergencyName} (${targetAthlete.profile.emergencyRelation || 'contact'})`
+                      : 'Not set'}
+                  </div>
+                </div>
+                <button
+                  onClick={() => toggleShare('emergencyContact')}
+                  style={{
+                    ...styles.invitePermToggle,
+                    background: contactSharing.emergencyContact ? '#1a1a1a' : '#e0d9c8'
+                  }}
+                  aria-label="Toggle emergency contact sharing"
+                >
+                  <span style={{
+                    ...styles.invitePermToggleKnob,
+                    transform: contactSharing.emergencyContact ? 'translateX(20px)' : 'translateX(2px)'
+                  }} />
+                </button>
+              </div>
+
+              {/* GP / clinician */}
+              <div style={styles.contactShareRow}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={styles.contactShareRowLabel}>
+                    GP / clinician
+                    <span style={styles.contactShareTag}>medical only</span>
+                  </div>
+                  <div style={styles.contactShareSub}>
+                    {targetAthlete?.profile?.gpName || 'Not set'}
+                  </div>
+                </div>
+                <button
+                  onClick={() => toggleShare('gp')}
+                  style={{
+                    ...styles.invitePermToggle,
+                    background: contactSharing.gp ? '#1a1a1a' : '#e0d9c8'
+                  }}
+                  aria-label="Toggle GP sharing"
+                >
+                  <span style={{
+                    ...styles.invitePermToggleKnob,
+                    transform: contactSharing.gp ? 'translateX(20px)' : 'translateX(2px)'
+                  }} />
+                </button>
+              </div>
+
+              {/* Contact preference note */}
+              <div style={{ marginTop: 12 }}>
+                <div style={styles.contactShareRowLabel}>Contact preference note (optional)</div>
+                <textarea
+                  style={{ ...styles.perfTextarea, marginTop: 6 }}
+                  rows="2"
+                  value={contactNote}
+                  onChange={e => setContactNote(e.target.value)}
+                  placeholder="e.g. Text only — no calls before 8am."
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Pending invitations */}
         {pendingLinks.length > 0 && (
@@ -2326,6 +3615,224 @@ function AthletePrivacy({ athleteId, currentUser, auditLog, links, onCreateLink,
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+
+// ============================================================
+// StaffPrivacy — staff member controls own contact-sharing prefs
+// Mirrors changes back to the seed so the Contacts directory updates live
+// ============================================================
+function StaffPrivacy({ currentUser, onBack }) {
+  const [users, setUsers] = useState([]);
+  const [contactSharing, setContactSharing] = useState(null);
+  const [contactNote, setContactNote] = useState('');
+  const [editingPhone, setEditingPhone] = useState(false);
+  const [editingEmail, setEditingEmail] = useState(false);
+  const [phoneValue, setPhoneValue] = useState('');
+  const [emailValue, setEmailValue] = useState('');
+
+  useEffect(() => {
+    const seed = getSeedData();
+    setUsers(seed.teamUsers || []);
+  }, []);
+
+  // Find the canonical user record for the current user
+  const me = users.find(u => u.id === currentUser?.id);
+
+  // Hydrate local state from the user record
+  useEffect(() => {
+    if (me && contactSharing === null) {
+      const share = me.contactSharing || {};
+      setContactSharing({
+        phone: share.phone ?? true,
+        email: share.email ?? true
+      });
+      setContactNote(me.contactNote || '');
+      setPhoneValue(me.phone || '');
+      setEmailValue(me.email || '');
+    }
+  }, [me, contactSharing]);
+
+  const toggleShare = (key) => {
+    const next = { ...contactSharing, [key]: !contactSharing[key] };
+    setContactSharing(next);
+    if (me) {
+      me.contactSharing = { ...me.contactSharing, [key]: next[key] };
+    }
+  };
+
+  // Mirror note edits to the seed
+  useEffect(() => {
+    if (me && contactSharing !== null) {
+      me.contactNote = contactNote;
+    }
+  }, [contactNote, me, contactSharing]);
+
+  // Mirror phone/email edits to the seed
+  useEffect(() => {
+    if (me) {
+      me.phone = phoneValue;
+      me.email = emailValue;
+    }
+  }, [phoneValue, emailValue, me]);
+
+  if (!me) {
+    return (
+      <div style={styles.pFrame}>
+        <header style={styles.pHeader}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button onClick={onBack} style={styles.pBackBtn}>
+              <ArrowLeft size={16} />
+            </button>
+            <div>
+              <div style={styles.pHeaderKicker}>Privacy & sharing</div>
+              <div style={styles.pOrgName}>Loading…</div>
+            </div>
+          </div>
+        </header>
+      </div>
+    );
+  }
+
+  return (
+    <div style={styles.pFrame}>
+      <header style={styles.pHeader}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button onClick={onBack} style={styles.pBackBtn}>
+            <ArrowLeft size={16} />
+          </button>
+          <div>
+            <div style={styles.pHeaderKicker}>Privacy & sharing</div>
+            <div style={styles.pOrgName}>Your contact details</div>
+          </div>
+        </div>
+      </header>
+
+      <p style={styles.aFilesIntro}>
+        Other staff at the club can see whatever you share here in the team Contacts directory.
+        Toggle off anything you'd rather keep private.
+      </p>
+
+      {/* Identity card — basic info, not editable here */}
+      <div style={styles.staffIdentityCard}>
+        <div style={{ ...styles.contactCardAvatar, background: '#1a1a1a', color: '#f5f1e8', width: 44, height: 44, fontSize: 15 }}>
+          {me.avatar}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={styles.contactCardName}>{me.name}</div>
+          <div style={styles.contactCardMeta}>
+            {me.title || ROLE_LABELS[me.role]}
+          </div>
+        </div>
+      </div>
+
+      <div style={styles.privacySection}>
+        <div style={styles.privacySectionLabel}>What you share</div>
+        <div style={styles.contactShareCard}>
+          <p style={styles.contactShareIntro}>
+            Athletes don't see this — only other staff with access to the Contacts directory.
+          </p>
+
+          {/* Phone */}
+          <div style={styles.contactShareRow}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={styles.contactShareRowLabel}>Phone number</div>
+              {editingPhone ? (
+                <input
+                  style={{ ...styles.perfInput, marginTop: 4 }}
+                  value={phoneValue}
+                  onChange={e => setPhoneValue(e.target.value)}
+                  onBlur={() => setEditingPhone(false)}
+                  placeholder="+61 4xx xxx xxx"
+                  autoFocus
+                />
+              ) : (
+                <button
+                  onClick={() => setEditingPhone(true)}
+                  style={styles.contactShareValue}
+                >
+                  {phoneValue || 'Add phone number'}
+                </button>
+              )}
+            </div>
+            <button
+              onClick={() => toggleShare('phone')}
+              style={{
+                ...styles.invitePermToggle,
+                background: contactSharing?.phone ? '#1a1a1a' : '#e0d9c8'
+              }}
+              aria-label="Toggle phone sharing"
+            >
+              <span style={{
+                ...styles.invitePermToggleKnob,
+                transform: contactSharing?.phone ? 'translateX(20px)' : 'translateX(2px)'
+              }} />
+            </button>
+          </div>
+
+          {/* Email */}
+          <div style={styles.contactShareRow}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={styles.contactShareRowLabel}>Email</div>
+              {editingEmail ? (
+                <input
+                  type="email"
+                  style={{ ...styles.perfInput, marginTop: 4 }}
+                  value={emailValue}
+                  onChange={e => setEmailValue(e.target.value)}
+                  onBlur={() => setEditingEmail(false)}
+                  placeholder="you@example.com"
+                  autoFocus
+                />
+              ) : (
+                <button
+                  onClick={() => setEditingEmail(true)}
+                  style={styles.contactShareValue}
+                >
+                  {emailValue || 'Add email'}
+                </button>
+              )}
+            </div>
+            <button
+              onClick={() => toggleShare('email')}
+              style={{
+                ...styles.invitePermToggle,
+                background: contactSharing?.email ? '#1a1a1a' : '#e0d9c8'
+              }}
+              aria-label="Toggle email sharing"
+            >
+              <span style={{
+                ...styles.invitePermToggleKnob,
+                transform: contactSharing?.email ? 'translateX(20px)' : 'translateX(2px)'
+              }} />
+            </button>
+          </div>
+
+          {/* Contact preference note */}
+          <div style={{ marginTop: 12 }}>
+            <div style={styles.contactShareRowLabel}>Contact preference note (optional)</div>
+            <textarea
+              style={{ ...styles.perfTextarea, marginTop: 6 }}
+              rows="2"
+              value={contactNote}
+              onChange={e => setContactNote(e.target.value)}
+              placeholder="e.g. Clinic Tue/Thu. Urgent: call."
+            />
+            <p style={{ fontSize: 11, color: '#8a8275', marginTop: 6, fontStyle: 'italic' }}>
+              Helps colleagues reach you in the way that works best.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <p style={styles.aFilesIntro}>
+        Looking for athlete data sharing controls? Athlete privacy is managed individually by each athlete
+        from their own app.
+      </p>
+
+      <div style={{ height: 24 }} />
     </div>
   );
 }
@@ -2772,7 +4279,7 @@ function TeamAccessScreen({ athletes, links, currentUser, onCreateLinks, onRevok
         </button>
       </div>
 
-      <div style={styles.pFilters}>
+      <div className="tempo-scroll-x" style={styles.pFilters}>
         <span style={styles.pFilterLabel}>Show</span>
         {[
           { k: 'all', l: `All (${userRows.length})` },
@@ -3397,6 +4904,7 @@ function PractitionerApp({ currentUser, auditLog, recordAudit, onSwitchView, onO
   const [filter, setFilter] = useState('all'); // all | flagged | injured | missing
   const [viewMode, setViewMode] = useState('roster'); // roster | performance
   const [showTeamAccess, setShowTeamAccess] = useState(false);
+  const [showPrivacy, setShowPrivacy] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -3416,7 +4924,45 @@ function PractitionerApp({ currentUser, auditLog, recordAudit, onSwitchView, onO
 
   // Filter athletes to only those the current user can access
   const accessibleIds = accessibleAthleteIds(currentUser, links);
-  const visibleAthletes = athletes.filter(a => accessibleIds.includes(a.id));
+  // When viewing as practitioner, exclude the user's own athlete profile from the caseload —
+  // it appears under "My training" instead (the dual-mode switcher).
+  const visibleAthletes = athletes
+    .filter(a => accessibleIds.includes(a.id))
+    .filter(a => a.id !== currentUser?.athleteId);
+
+  // Group accessible athletes by club for the header summary.
+  // If the user is at one club, show the club name.
+  // If they span multiple, show "Caseload · 3 clubs + privates" etc.
+  const clubsRepresented = [...new Set(visibleAthletes.map(a => a.team).filter(Boolean))];
+  const squadsRepresented = [...new Set(visibleAthletes.filter(a => a.team && a.squad).map(a => `${a.team}::${a.squad}`))];
+  const independentCount = visibleAthletes.filter(a => !a.team).length;
+  const totalContexts = clubsRepresented.length + (independentCount > 0 ? 1 : 0);
+  let headerTitle, headerSub;
+  if (totalContexts === 0) {
+    headerTitle = 'Caseload';
+    headerSub = 'No athletes yet · Invite to begin';
+  } else if (clubsRepresented.length === 1 && independentCount === 0) {
+    // Single-club case (e.g. club admin, head coach at one club)
+    headerTitle = clubsRepresented[0];
+    // Show squad count if the club has multiple squads
+    const squadsAtClub = squadsRepresented.filter(s => s.startsWith(clubsRepresented[0] + '::'));
+    if (squadsAtClub.length > 1) {
+      headerSub = `${squadsAtClub.length} squads · ${visibleAthletes.length} athletes`;
+    } else {
+      headerSub = `${visibleAthletes.length} athletes`;
+    }
+  } else if (clubsRepresented.length === 0 && independentCount > 0) {
+    // Private practice only
+    headerTitle = 'Caseload';
+    headerSub = `${independentCount} private ${independentCount === 1 ? 'client' : 'clients'}`;
+  } else {
+    // Mixed — multi-club / private clients
+    const parts = [];
+    if (clubsRepresented.length > 0) parts.push(`${clubsRepresented.length} ${clubsRepresented.length === 1 ? 'club' : 'clubs'}`);
+    if (independentCount > 0) parts.push(`${independentCount} private`);
+    headerTitle = 'Caseload';
+    headerSub = `${parts.join(' · ')} · ${visibleAthletes.length} athletes`;
+  }
 
   // Sync athletes' injuryStatus from the live injuries dataset
   // (so injuries entered via the form drive the traffic-light dot)
@@ -3608,6 +5154,15 @@ function PractitionerApp({ currentUser, auditLog, recordAudit, onSwitchView, onO
     mergeUploadedSessions
   };
 
+  if (showPrivacy) {
+    return (
+      <StaffPrivacy
+        currentUser={currentUser}
+        onBack={() => setShowPrivacy(false)}
+      />
+    );
+  }
+
   if (showTeamAccess) {
     return (
       <TeamAccessScreen
@@ -3647,14 +5202,15 @@ function PractitionerApp({ currentUser, auditLog, recordAudit, onSwitchView, onO
           </div>
           <span style={styles.pHeaderDivider}>/</span>
           <div>
-            <div style={styles.pOrgName}>Marlborough Football Club</div>
-            <div style={styles.pOrgSub}>Seniors · Week {Math.ceil(new Date().getDate() / 7)}, {new Date().toLocaleDateString('en-AU', { month: 'long' })}</div>
+            <div style={styles.pOrgName}>{headerTitle}</div>
+            <div style={styles.pOrgSub}>{headerSub}</div>
           </div>
         </div>
         <UserBadge
           user={currentUser}
           onSwitch={onOpenSwitcher}
           onLogout={onLogout}
+          onPrivacy={() => setShowPrivacy(true)}
           onInvite={
             currentUser?.role === 'club_admin'
               ? () => setShowTeamAccess(true)
@@ -3663,17 +5219,28 @@ function PractitionerApp({ currentUser, auditLog, recordAudit, onSwitchView, onO
         />
       </header>
 
-      {/* Athlete view toggle (only meaningful if user has an athlete account too) */}
+      {/* Dual-identity mode switcher — shown when the user has BOTH staff and athlete identities */}
       {currentUser?.athleteId && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-          <button onClick={onSwitchView} style={styles.viewToggle}>
-            Athlete view →
+        <div style={styles.dualModeSwitcher}>
+          <button style={{ ...styles.dualModeBtn, ...styles.dualModeBtnActive }}>
+            <span style={styles.dualModeBtnIcon}>◐</span>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={styles.dualModeBtnLabel}>Practitioner</div>
+              <div style={styles.dualModeBtnSub}>{currentUser.title || ROLE_LABELS[currentUser.role]}</div>
+            </div>
+          </button>
+          <button onClick={onSwitchView} style={styles.dualModeBtn}>
+            <span style={{ ...styles.dualModeBtnIcon, opacity: 0.5 }}>○</span>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={styles.dualModeBtnLabel}>My training</div>
+              <div style={styles.dualModeBtnSub}>Athlete view</div>
+            </div>
           </button>
         </div>
       )}
 
       {/* View mode tabs */}
-      <div style={styles.pViewTabs}>
+      <div className="tempo-scroll-x" style={styles.pViewTabs}>
         <button
           onClick={() => setViewMode('roster')}
           style={{ ...styles.pViewTab, ...(viewMode === 'roster' ? styles.pViewTabActive : {}) }}
@@ -3686,9 +5253,22 @@ function PractitionerApp({ currentUser, auditLog, recordAudit, onSwitchView, onO
         >
           Performance
         </button>
+        <button
+          onClick={() => setViewMode('contacts')}
+          style={{ ...styles.pViewTab, ...(viewMode === 'contacts' ? styles.pViewTabActive : {}) }}
+        >
+          Contacts
+        </button>
       </div>
 
-      {viewMode === 'performance' ? (
+      {viewMode === 'contacts' ? (
+        <ContactsTeamView
+          athletes={athletesWithStatus}
+          currentUser={currentUser}
+          links={links}
+          onPickAthlete={setSelectedAthlete}
+        />
+      ) : viewMode === 'performance' ? (
         <PerformanceTeamView
           athletes={athletesWithStatus}
           perfData={perfData}
@@ -3705,7 +5285,7 @@ function PractitionerApp({ currentUser, auditLog, recordAudit, onSwitchView, onO
       </div>
 
       {/* Filters */}
-      <div style={styles.pFilters}>
+      <div className="tempo-scroll-x" style={styles.pFilters}>
         <span style={styles.pFilterLabel}>Show</span>
         {[
           { k: 'all', l: 'All' },
@@ -3720,96 +5300,171 @@ function PractitionerApp({ currentUser, auditLog, recordAudit, onSwitchView, onO
         ))}
       </div>
 
-      {/* Athlete list — card per athlete, mobile-first */}
+      {/* Athlete list — grouped by club context if multiple */}
       <div style={styles.aList}>
-        {visibleRows.map(r => {
-          const inj = r.athlete.injuryStatus || 'available';
-          const injColor = inj === 'available' ? '#3a8a4d'
-                          : inj === 'modified' ? '#d4a017'
-                          : '#c8472b';
-          const injLabel = inj === 'available' ? 'Available'
-                          : inj === 'modified' ? 'Modified'
-                          : 'Out';
-          return (
-            <button
-              key={r.athlete.id}
-              style={styles.pAthCard}
-              onClick={() => setSelectedAthlete(r.athlete.id)}
-            >
-              {/* Row 1: name + status indicators */}
-              <div style={styles.aCardTop}>
-                <div style={styles.aCardLeft}>
-                  <div style={styles.aCardNameRow}>
-                    <span style={{ ...styles.aTrafficDot, background: injColor }} aria-label={injLabel} />
-                    <span style={styles.aCardName}>{r.athlete.name}</span>
-                  </div>
-                  <div style={styles.aCardMeta}>
-                    {r.athlete.position} · {r.athlete.playerId}
-                    {r.athlete.injuryNote && <span style={styles.aInjNote}> · {r.athlete.injuryNote}</span>}
-                  </div>
-                </div>
-                <div style={styles.aCardRight}>
-                  <StatusDot status={r.status} />
-                </div>
-              </div>
+        {(() => {
+          // Group rows by club + squad (independents under "Private clients")
+          const groups = {};
+          visibleRows.forEach(r => {
+            const team = r.athlete.team;
+            const squad = r.athlete.squad;
+            let groupKey;
+            if (!team) groupKey = 'Private clients';
+            else if (squad) groupKey = `${team} · ${squad}`;
+            else groupKey = team;
+            if (!groups[groupKey]) groups[groupKey] = [];
+            groups[groupKey].push(r);
+          });
+          const groupNames = Object.keys(groups);
+          const showHeaders = groupNames.length > 1; // only show headers if 2+ contexts
 
-              {/* Row 2: three stats */}
-              <div style={styles.aCardStats}>
-                <div style={styles.aStat}>
-                  <div style={styles.aStatLabel}>Weekly load</div>
-                  <div style={styles.aStatValue}>
-                    {r.weekly.total.toLocaleString()}
-                    <span style={styles.aStatUnit}> AU</span>
+          // Brand-new staff with no athletes: show the empty-caseload welcome
+          if (groupNames.length === 0) {
+            return (
+              <div style={styles.firstRunCard}>
+                <div style={styles.firstRunHead}>
+                  <div style={styles.firstRunIcon}>◆</div>
+                  <div>
+                    <div style={styles.firstRunTitle}>Build your caseload</div>
+                    <div style={styles.firstRunSubtitle}>No athletes yet</div>
                   </div>
                 </div>
-                <div style={styles.aStat}>
-                  <div style={styles.aStatLabel}>ACWR</div>
-                  <div style={{
-                    ...styles.aStatValue,
-                    color: r.acwr > 1.5 ? '#c8472b' : r.acwr < 0.7 ? '#8a8275' : '#1a1a1a'
-                  }}>
-                    {r.acwr ? r.acwr.toFixed(2) : '—'}
-                  </div>
-                </div>
-                <div style={styles.aStat}>
-                  <div style={styles.aStatLabel}>Wellness</div>
-                  <div style={{
-                    ...styles.aStatValue,
-                    color: r.wellAvg > 4 ? '#c8472b' : '#1a1a1a'
-                  }}>
-                    {r.wellAvg !== null ? r.wellAvg.toFixed(1) : '—'}
-                    <span style={styles.aStatUnit}> /7</span>
-                  </div>
-                </div>
-              </div>
 
-              {/* Row 3: flags + last session — only shown if interesting */}
-              {(r.flags.length > 0 || r.dayssince !== null) && (
-                <div style={styles.aCardFoot}>
-                  <div style={styles.aFlagRow}>
-                    {r.flags.slice(0, 2).map((f, i) => (
-                      <span
-                        key={i}
-                        style={{
-                          ...styles.pFlag,
-                          ...(f.type === 'load' || f.type === 'wellness' ? styles.pFlagWarn : {})
-                        }}
-                      >
-                        {f.label}
-                      </span>
-                    ))}
-                    {r.flags.length > 2 && <span style={styles.pFlag}>+{r.flags.length - 2}</span>}
-                  </div>
-                  {r.dayssince !== null && (
-                    <div style={styles.aLastSession}>
-                      {r.dayssince === 0 ? 'trained today' : `${r.dayssince}d ago`}
+                <p style={{ fontSize: 13, color: '#5a564d', lineHeight: 1.5, margin: 0 }}>
+                  Athletes choose who can see their data — so the way to build a caseload is to
+                  have athletes invite you, or be added by a club admin.
+                </p>
+
+                <div style={styles.firstRunStep}>
+                  <div style={styles.firstRunStepNum}>1</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={styles.firstRunStepTitle}>Share your email with athletes</div>
+                    <div style={styles.firstRunStepDesc}>
+                      Tell them: "{currentUser?.email}". They invite you from their Privacy & access screen.
                     </div>
-                  )}
+                  </div>
+                </div>
+
+                <div style={styles.firstRunStep}>
+                  <div style={styles.firstRunStepNum}>2</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={styles.firstRunStepTitle}>Get added by a club</div>
+                    <div style={styles.firstRunStepDesc}>
+                      If you work with a club, ask the club admin to add you in their Team & access screen.
+                    </div>
+                  </div>
+                </div>
+
+                <p style={styles.firstRunNote}>
+                  Tempo doesn't let practitioners search for or claim athletes. Access always flows from the athlete.
+                </p>
+              </div>
+            );
+          }
+
+          return groupNames.map(groupName => (
+            <div key={groupName}>
+              {showHeaders && (
+                <div style={styles.rosterGroupHead}>
+                  <div style={styles.rosterGroupLabel}>{groupName}</div>
+                  <div style={styles.rosterGroupCount}>
+                    {groups[groupName].length} {groups[groupName].length === 1 ? 'athlete' : 'athletes'}
+                  </div>
                 </div>
               )}
-            </button>
-          );
-        })}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {groups[groupName].map(r => {
+                  const inj = r.athlete.injuryStatus || 'available';
+                  const injColor = inj === 'available' ? '#3a8a4d'
+                                  : inj === 'modified' ? '#d4a017'
+                                  : '#c8472b';
+                  const injLabel = inj === 'available' ? 'Available'
+                                  : inj === 'modified' ? 'Modified'
+                                  : 'Out';
+                  return (
+                    <button
+                      key={r.athlete.id}
+                      style={styles.pAthCard}
+                      onClick={() => setSelectedAthlete(r.athlete.id)}
+                    >
+                      {/* Row 1: name + status indicators */}
+                      <div style={styles.aCardTop}>
+                        <div style={styles.aCardLeft}>
+                          <div style={styles.aCardNameRow}>
+                            <span style={{ ...styles.aTrafficDot, background: injColor }} aria-label={injLabel} />
+                            <span style={styles.aCardName}>{r.athlete.name}</span>
+                          </div>
+                          <div style={styles.aCardMeta}>
+                            {r.athlete.position}{r.athlete.playerId ? ` · ${r.athlete.playerId}` : ''}
+                            {r.athlete.injuryNote && <span style={styles.aInjNote}> · {r.athlete.injuryNote}</span>}
+                          </div>
+                        </div>
+                        <div style={styles.aCardRight}>
+                          <StatusDot status={r.status} />
+                        </div>
+                      </div>
+
+                      {/* Row 2: three stats */}
+                      <div style={styles.aCardStats}>
+                        <div style={styles.aStat}>
+                          <div style={styles.aStatLabel}>Weekly load</div>
+                          <div style={styles.aStatValue}>
+                            {r.weekly.total.toLocaleString()}
+                            <span style={styles.aStatUnit}> AU</span>
+                          </div>
+                        </div>
+                        <div style={styles.aStat}>
+                          <div style={styles.aStatLabel}>ACWR</div>
+                          <div style={{
+                            ...styles.aStatValue,
+                            color: r.acwr > 1.5 ? '#c8472b' : r.acwr < 0.7 ? '#8a8275' : '#1a1a1a'
+                          }}>
+                            {r.acwr ? r.acwr.toFixed(2) : '—'}
+                          </div>
+                        </div>
+                        <div style={styles.aStat}>
+                          <div style={styles.aStatLabel}>Wellness</div>
+                          <div style={{
+                            ...styles.aStatValue,
+                            color: r.wellAvg > 4 ? '#c8472b' : '#1a1a1a'
+                          }}>
+                            {r.wellAvg !== null ? r.wellAvg.toFixed(1) : '—'}
+                            <span style={styles.aStatUnit}> /7</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Row 3: flags + last session — only shown if interesting */}
+                      {(r.flags.length > 0 || r.dayssince !== null) && (
+                        <div style={styles.aCardFoot}>
+                          <div style={styles.aFlagRow}>
+                            {r.flags.slice(0, 2).map((f, i) => (
+                              <span
+                                key={i}
+                                style={{
+                                  ...styles.pFlag,
+                                  ...(f.type === 'load' || f.type === 'wellness' ? styles.pFlagWarn : {})
+                                }}
+                              >
+                                {f.label}
+                              </span>
+                            ))}
+                            {r.flags.length > 2 && <span style={styles.pFlag}>+{r.flags.length - 2}</span>}
+                          </div>
+                          {r.dayssince !== null && (
+                            <div style={styles.aLastSession}>
+                              {r.dayssince === 0 ? 'trained today' : `${r.dayssince}d ago`}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ));
+        })()}
       </div>
 
       <div style={styles.pFootnote}>
@@ -3847,7 +5502,7 @@ function AccessBlocked({ title, body, requiredRole }) {
 // ============================================================
 // UserBadge — current-user indicator with switch/logout menu
 // ============================================================
-function UserBadge({ user, onSwitch, onLogout, onInvite }) {
+function UserBadge({ user, onSwitch, onLogout, onInvite, onPrivacy }) {
   const [open, setOpen] = useState(false);
   if (!user) return null;
 
@@ -3894,6 +5549,16 @@ function UserBadge({ user, onSwitch, onLogout, onInvite }) {
                 <X size={18} />
               </button>
             </div>
+
+            {onPrivacy && (
+              <button
+                style={styles.userSheetItem}
+                onClick={() => { setOpen(false); onPrivacy?.(); }}
+              >
+                <span>Privacy & sharing</span>
+                <span style={styles.userSheetItemArrow}>→</span>
+              </button>
+            )}
 
             {onInvite && (
               <button
@@ -4170,6 +5835,7 @@ function PerformanceTeamView({ athletes, perfData, onPickAthlete }) {
         <TestingTeamSection
           tests={tests}
           athletes={athletes}
+          perfData={perfData}
           onPickAthlete={onPickAthlete}
         />
       )}
@@ -4213,7 +5879,7 @@ function InjuriesTeamSection({ injuries, athletes, onPickAthlete }) {
 
   return (
     <div style={styles.perfPanel}>
-      <div style={styles.pFilters}>
+      <div className="tempo-scroll-x" style={styles.pFilters}>
         <span style={styles.pFilterLabel}>Show</span>
         {[{ k: 'open', l: 'Open' }, { k: 'returned', l: 'Returned' }, { k: 'all', l: 'All' }].map(f => (
           <button key={f.k} onClick={() => setFilter(f.k)}
@@ -4291,9 +5957,11 @@ const formatTestValue = (num, unit) => {
   return num.toFixed(num < 10 ? 2 : 1);
 };
 
-function TestingTeamSection({ tests, athletes, onPickAthlete }) {
+function TestingTeamSection({ tests, athletes, perfData, onPickAthlete }) {
   const [category, setCategory] = useState('all');
   const [selectedTestKey, setSelectedTestKey] = useState(null);
+  const [showBulkSession, setShowBulkSession] = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
 
   // Filter by category
   const filteredTests = tests.filter(t => {
@@ -4345,6 +6013,34 @@ function TestingTeamSection({ tests, athletes, onPickAthlete }) {
     return a.meta.name.localeCompare(b.meta.name);
   });
 
+  // If upload mode is open, show that
+  if (showUpload) {
+    return (
+      <TestingUploadSection
+        athletes={athletes}
+        onSave={(results) => {
+          results.forEach(r => perfData.addTest(r));
+          setShowUpload(false);
+        }}
+        onCancel={() => setShowUpload(false)}
+      />
+    );
+  }
+
+  // If bulk-entry session is open, show that
+  if (showBulkSession) {
+    return (
+      <BulkTestingSession
+        athletes={athletes}
+        onSave={(results) => {
+          results.forEach(r => perfData.addTest(r));
+          setShowBulkSession(false);
+        }}
+        onCancel={() => setShowBulkSession(false)}
+      />
+    );
+  }
+
   // If a test is selected, show the drill-down
   if (selectedTestKey) {
     const item = summary.find(s => s.testKey === selectedTestKey);
@@ -4362,7 +6058,23 @@ function TestingTeamSection({ tests, athletes, onPickAthlete }) {
 
   return (
     <div style={styles.perfPanel}>
-      <div style={styles.pFilters}>
+      {/* Primary actions — live entry + bulk CSV import */}
+      <div style={styles.testingActionRow}>
+        <button
+          style={styles.testingActionPrimary}
+          onClick={() => setShowBulkSession(true)}
+        >
+          + Record testing session
+        </button>
+        <button
+          style={styles.testingActionSecondary}
+          onClick={() => setShowUpload(true)}
+        >
+          ↑ Upload CSV
+        </button>
+      </div>
+
+      <div className="tempo-scroll-x" style={{ ...styles.pFilters, marginTop: 14 }}>
         <span style={styles.pFilterLabel}>Filter</span>
         <button onClick={() => setCategory('all')}
           style={{ ...styles.pFilterBtn, ...(category === 'all' ? styles.pFilterBtnActive : {}) }}>
@@ -4426,6 +6138,685 @@ function TestingTeamSection({ tests, athletes, onPickAthlete }) {
     </div>
   );
 }
+
+
+// ============================================================
+// BulkTestingSession — record results for many athletes at once
+// One test, one date, many athlete results.
+// ============================================================
+function BulkTestingSession({ athletes, onSave, onCancel }) {
+  const [step, setStep] = useState('pickTest'); // pickTest | enterResults
+  const [testKey, setTestKey] = useState(null);
+  const [sessionDate, setSessionDate] = useState(today());
+  const [results, setResults] = useState({}); // athleteId → { value, side?, note? }
+  const [sessionNote, setSessionNote] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Filter by category + search query
+  const normalisedQuery = searchQuery.trim().toLowerCase();
+  const filteredKeys = TEST_CATALOG
+    .filter(t => t.cat !== 'Custom') // hide custom from picker by default
+    .filter(t => categoryFilter === 'all' || t.cat === categoryFilter)
+    .filter(t => {
+      if (!normalisedQuery) return true;
+      return t.name.toLowerCase().includes(normalisedQuery)
+          || t.cat.toLowerCase().includes(normalisedQuery)
+          || (t.brief && t.brief.toLowerCase().includes(normalisedQuery));
+    })
+    .map(t => t.key);
+
+  const test = testKey ? getTest(testKey) : null;
+  // Bilateral tests need separate L/R inputs. Detect by name pattern —
+  // Nordic, single-leg variants, isokinetic, etc. typically need both sides.
+  const isBilateral = test && /nordic|single[- ]?leg|isokinetic|\bsl\b/i.test(test.name);
+
+  // ===== Step 1: pick a test =====
+  if (step === 'pickTest') {
+    return (
+      <div style={styles.pFrame}>
+        <header style={styles.pHeader}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button onClick={onCancel} style={styles.pBackBtn}>
+              <X size={16} />
+            </button>
+            <div>
+              <div style={styles.pHeaderKicker}>Step 1 of 2</div>
+              <div style={styles.pOrgName}>Pick a test</div>
+            </div>
+          </div>
+        </header>
+
+        <p style={styles.aFilesIntro}>
+          Choose which test you're running. You'll enter results for each athlete in the next step.
+        </p>
+
+        {/* Search field */}
+        <div style={styles.testSearchWrap}>
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search tests by name, category, or description…"
+            style={styles.testSearchInput}
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              style={styles.testSearchClear}
+              aria-label="Clear search"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+
+        <div className="tempo-scroll-x" style={{ ...styles.pFilters, marginBottom: 14 }}>
+          <span style={styles.pFilterLabel}>Filter</span>
+          <button onClick={() => setCategoryFilter('all')}
+            style={{ ...styles.pFilterBtn, ...(categoryFilter === 'all' ? styles.pFilterBtnActive : {}) }}>
+            All
+          </button>
+          {TEST_CATEGORIES.filter(c => c !== 'Custom').map(c => (
+            <button key={c} onClick={() => setCategoryFilter(c)}
+              style={{ ...styles.pFilterBtn, ...(categoryFilter === c ? styles.pFilterBtnActive : {}) }}>
+              {c}
+            </button>
+          ))}
+        </div>
+
+        {filteredKeys.length === 0 && (
+          <div style={styles.testSearchEmpty}>
+            No tests match "{searchQuery}". Try a different term or category.
+          </div>
+        )}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {filteredKeys.map(key => {
+            const t = getTest(key);
+            const isSelected = testKey === key;
+            return (
+              <button
+                key={key}
+                onClick={() => setTestKey(key)}
+                style={{
+                  ...styles.identityPick,
+                  ...(isSelected ? styles.identityPickActive : {})
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+                  <div style={styles.identityName}>{t.name}</div>
+                  <div style={styles.identityMeta}>
+                    {t.cat} · measured in {t.unit}
+                    {t.better === 'lower' ? ' · lower is better' : ' · higher is better'}
+                  </div>
+                  {t.brief && (
+                    <div style={styles.identityScope}>{t.brief}</div>
+                  )}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div style={styles.inviteActions}>
+          <button style={styles.perfCancelBtn} onClick={onCancel}>Cancel</button>
+          <button
+            style={{ ...styles.perfSaveBtn, opacity: testKey ? 1 : 0.4 }}
+            disabled={!testKey}
+            onClick={() => setStep('enterResults')}
+          >
+            Continue
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ===== Step 2: enter results per athlete =====
+  const updateResult = (athleteId, field, value) => {
+    setResults({
+      ...results,
+      [athleteId]: { ...results[athleteId], [field]: value }
+    });
+  };
+
+  const handleSave = () => {
+    const records = [];
+    Object.entries(results).forEach(([athleteId, r]) => {
+      // Only save athletes that have a value entered
+      if (!r || r.value === undefined || r.value === '' || r.value === null) return;
+      const numericValue = parseFloat(r.value);
+      if (Number.isNaN(numericValue)) return;
+      // Bilateral tests (e.g. Nordic, isokinetic) — save L and R as separate records
+      if (isBilateral && r.valueR !== undefined && r.valueR !== '' && r.valueR !== null) {
+        records.push({
+          id: `t_${Date.now()}_${athleteId}_L`,
+          athleteId,
+          testKey,
+          date: sessionDate,
+          value: numericValue,
+          side: 'L',
+          note: sessionNote || ''
+        });
+        records.push({
+          id: `t_${Date.now()}_${athleteId}_R`,
+          athleteId,
+          testKey,
+          date: sessionDate,
+          value: parseFloat(r.valueR),
+          side: 'R',
+          note: sessionNote || ''
+        });
+      } else {
+        records.push({
+          id: `t_${Date.now()}_${athleteId}`,
+          athleteId,
+          testKey,
+          date: sessionDate,
+          value: numericValue,
+          note: sessionNote || ''
+        });
+      }
+    });
+    onSave(records);
+  };
+
+  const enteredCount = Object.values(results).filter(r =>
+    r && r.value !== undefined && r.value !== '' && r.value !== null
+  ).length;
+
+  return (
+    <div style={styles.pFrame}>
+      <header style={styles.pHeader}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button onClick={() => setStep('pickTest')} style={styles.pBackBtn}>
+            <ArrowLeft size={16} />
+          </button>
+          <div>
+            <div style={styles.pHeaderKicker}>Step 2 of 2</div>
+            <div style={styles.pOrgName}>{test.name}</div>
+          </div>
+        </div>
+      </header>
+
+      {/* Session metadata */}
+      <div style={styles.perfPanel}>
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 140 }}>
+            <div style={styles.perfFormLabel}>Date</div>
+            <input
+              type="date"
+              style={styles.perfInput}
+              value={sessionDate}
+              onChange={e => setSessionDate(e.target.value)}
+            />
+          </div>
+          <div style={{ flex: 2, minWidth: 200 }}>
+            <div style={styles.perfFormLabel}>Session note (optional)</div>
+            <input
+              style={styles.perfInput}
+              value={sessionNote}
+              onChange={e => setSessionNote(e.target.value)}
+              placeholder="e.g. Pre-season, indoor"
+            />
+          </div>
+        </div>
+
+        <div style={styles.bulkTestHint}>
+          Enter {test.unit} per athlete. Skip anyone who didn't test — only entered results get saved.
+          {isBilateral && ' For bilateral tests, enter L and R values separately.'}
+        </div>
+      </div>
+
+      {/* Per-athlete inputs */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 14 }}>
+        {athletes.map(a => {
+          const r = results[a.id] || {};
+          const initial = a.name.split(' ').map(p => p[0]).slice(0, 2).join('');
+          return (
+            <div key={a.id} style={styles.bulkTestRow}>
+              <div style={styles.bulkTestAvatar}>{initial}</div>
+              <div style={styles.bulkTestNameCol}>
+                <div style={styles.bulkTestName}>{a.name}</div>
+                <div style={styles.bulkTestMeta}>{a.position}{a.playerId ? ` · ${a.playerId}` : ''}</div>
+              </div>
+              {isBilateral ? (
+                <div style={styles.bulkTestInputCol}>
+                  <div style={styles.bulkTestBilateralRow}>
+                    <input
+                      type="number"
+                      step="any"
+                      style={styles.bulkTestInputSmall}
+                      placeholder="L"
+                      value={r.value || ''}
+                      onChange={e => updateResult(a.id, 'value', e.target.value)}
+                    />
+                    <input
+                      type="number"
+                      step="any"
+                      style={styles.bulkTestInputSmall}
+                      placeholder="R"
+                      value={r.valueR || ''}
+                      onChange={e => updateResult(a.id, 'valueR', e.target.value)}
+                    />
+                  </div>
+                  <div style={styles.bulkTestUnit}>{test.unit}</div>
+                </div>
+              ) : (
+                <div style={styles.bulkTestInputCol}>
+                  <input
+                    type="number"
+                    step="any"
+                    style={styles.bulkTestInput}
+                    placeholder="—"
+                    value={r.value || ''}
+                    onChange={e => updateResult(a.id, 'value', e.target.value)}
+                  />
+                  <div style={styles.bulkTestUnit}>{test.unit}</div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={styles.inviteActions}>
+        <button style={styles.perfCancelBtn} onClick={onCancel}>Cancel</button>
+        <button
+          style={{ ...styles.perfSaveBtn, opacity: enteredCount > 0 ? 1 : 0.4 }}
+          disabled={enteredCount === 0}
+          onClick={handleSave}
+        >
+          Save {enteredCount} {enteredCount === 1 ? 'result' : 'results'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
+// ============================================================
+// TestingUploadSection — CSV import for testing data
+// Athletes do their own thing for fitness data; this is a club-side
+// bulk importer for test results that already live in a spreadsheet.
+// ============================================================
+function TestingUploadSection({ athletes, onSave, onCancel }) {
+  const [csvText, setCsvText] = useState('');
+  const [parsedRows, setParsedRows] = useState(null); // null | array of {data, errors}
+  const fileInputRef = React.useRef(null);
+
+  // Build a lookup from name → athlete and playerId → athlete
+  const athleteByKey = useMemo(() => {
+    const m = {};
+    athletes.forEach(a => {
+      // Allow matching by id, playerId, or name (case-insensitive)
+      m[a.id.toLowerCase()] = a;
+      if (a.playerId) m[String(a.playerId).toLowerCase()] = a;
+      m[a.name.toLowerCase()] = a;
+    });
+    return m;
+  }, [athletes]);
+
+  // Build a lookup from test key/name → test
+  const testByKey = useMemo(() => {
+    const m = {};
+    TEST_CATALOG.forEach(t => {
+      m[t.key.toLowerCase()] = t;
+      m[t.name.toLowerCase()] = t;
+    });
+    return m;
+  }, []);
+
+  const parseCSV = (text) => {
+    // Simple CSV parser — handles quoted fields with commas, skips blank lines and # comments
+    const lines = text.split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('#'));
+    if (lines.length === 0) return [];
+
+    const parseLine = (line) => {
+      const out = [];
+      let cur = '';
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const c = line[i];
+        if (c === '"') {
+          if (inQuotes && line[i+1] === '"') { cur += '"'; i++; }
+          else inQuotes = !inQuotes;
+        } else if (c === ',' && !inQuotes) {
+          out.push(cur.trim());
+          cur = '';
+        } else {
+          cur += c;
+        }
+      }
+      out.push(cur.trim());
+      return out;
+    };
+
+    const headers = parseLine(lines[0]).map(h => h.toLowerCase().replace(/[\s_-]+/g, '_'));
+    return lines.slice(1).map((line, idx) => {
+      const cells = parseLine(line);
+      const row = {};
+      headers.forEach((h, i) => { row[h] = cells[i] || ''; });
+      row._rowNum = idx + 2; // CSV row number including header
+      return row;
+    });
+  };
+
+  const validateRows = (rows) => {
+    return rows.map(row => {
+      const errors = [];
+
+      // Find athlete (accept many possible column names)
+      const athleteKey = (row.athlete || row.athlete_name || row.name || row.athlete_id || row.player_id || row.playerid || '').toLowerCase();
+      const athlete = athleteByKey[athleteKey];
+      if (!athleteKey) errors.push('Missing "athlete" column (athlete name, ID, or player ID)');
+      else if (!athlete) errors.push(`Athlete "${row.athlete || row.athlete_name || row.name || row.athlete_id || athleteKey}" not found`);
+
+      // Find test (accept either friendly name or internal key)
+      const testKey = (row.test || row.test_name || row.test_key || '').toLowerCase();
+      const test = testByKey[testKey];
+      if (!testKey) errors.push('Missing "test" column (use the test name)');
+      else if (!test) errors.push(`Test "${row.test || row.test_name || row.test_key || testKey}" not found in catalog`);
+
+      // Validate date
+      const date = row.date;
+      if (!date) errors.push('Missing date column');
+      else if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) errors.push(`Date "${date}" must be in YYYY-MM-DD format`);
+
+      // Validate value
+      const value = parseFloat(row.value);
+      if (row.value === undefined || row.value === '') errors.push('Missing value column');
+      else if (Number.isNaN(value)) errors.push(`Value "${row.value}" is not a number`);
+
+      // Validate side if present
+      const side = row.side ? row.side.toUpperCase() : null;
+      if (side && side !== 'L' && side !== 'R') errors.push(`Side "${row.side}" must be L or R (or blank)`);
+
+      return {
+        rowNum: row._rowNum,
+        valid: errors.length === 0,
+        errors,
+        record: errors.length === 0 ? {
+          id: `t_csv_${Date.now()}_${row._rowNum}`,
+          athleteId: athlete.id,
+          testKey: test.key,
+          date,
+          value,
+          side: side || undefined,
+          note: row.note || ''
+        } : null
+      };
+    });
+  };
+
+  const handleParse = () => {
+    if (!csvText.trim()) return;
+    const rows = parseCSV(csvText);
+    const validated = validateRows(rows);
+    setParsedRows(validated);
+  };
+
+  const handleFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target.result;
+      setCsvText(text);
+      const rows = parseCSV(text);
+      const validated = validateRows(rows);
+      setParsedRows(validated);
+    };
+    reader.readAsText(file);
+  };
+
+  const downloadTemplate = () => {
+    // Build a friendly CSV that uses ATHLETE NAMES and TEST NAMES rather than
+    // internal IDs. The parser accepts either, but coaches think in names.
+    const sampleA = athletes[0];
+    const sampleB = athletes[1] || sampleA;
+    const sampleC = athletes[2] || sampleA;
+    const aName = sampleA?.name || 'Athlete name';
+    const bName = sampleB?.name || 'Athlete name';
+    const cName = sampleC?.name || 'Athlete name';
+    const todayStr = today();
+
+    // Group test names by category for the reference section
+    const categories = ['Aerobic', 'Speed', 'Agility', 'Power', 'Strength', 'Body comp', 'Clinical'];
+    const referenceLines = [];
+    referenceLines.push('');
+    referenceLines.push('# ============================================================');
+    referenceLines.push('# AVAILABLE TESTS — copy any name from below into the "test" column');
+    referenceLines.push('# ============================================================');
+    categories.forEach(cat => {
+      const inCat = TEST_CATALOG.filter(t => t.cat === cat);
+      if (inCat.length === 0) return;
+      referenceLines.push('');
+      referenceLines.push(`# --- ${cat} ---`);
+      inCat.forEach(t => {
+        referenceLines.push(`#   ${t.name}  (${t.unit})`);
+      });
+    });
+
+    const lines = [
+      '# TEMPO TESTING DATA TEMPLATE',
+      '#',
+      '# How to use this file:',
+      '# 1. Open in Excel, Google Sheets, or Numbers',
+      '# 2. Keep the header row (athlete,test,date,value,side,note)',
+      '# 3. Delete the example rows below and replace with your data',
+      '# 4. Save as CSV',
+      '# 5. Upload back into Tempo',
+      '#',
+      '# Tips:',
+      '#   - "athlete" = the full athlete name as shown in Tempo',
+      '#   - "test"    = the test name (full list at the bottom of this file)',
+      '#   - "date"    = YYYY-MM-DD format (e.g. 2026-05-20)',
+      '#   - "value"   = the result (just the number, no units)',
+      '#   - "side"    = L or R for bilateral tests (leave blank otherwise)',
+      '#   - "note"    = optional comment, like "pre-season" or "indoor"',
+      '#',
+      'athlete,test,date,value,side,note',
+      `${aName},Yo-Yo IR1,${todayStr},1840,,Pre-season`,
+      `${aName},Countermovement jump,${todayStr},38.2,,Force plate`,
+      `${aName},Nordic peak force,${todayStr},340,L,NordBord`,
+      `${aName},Nordic peak force,${todayStr},355,R,NordBord`,
+      `${bName},Back squat 1RM,${todayStr},145,,New PB`,
+      `${bName},Single-leg hop for distance,${todayStr},148,L,RTS battery`,
+      `${bName},Single-leg hop for distance,${todayStr},153,R,RTS battery`,
+      `${cName},20m sprint,${todayStr},2.94,,Timing gates`,
+      ...referenceLines
+    ];
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tempo-testing-template-${todayStr}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const validRecords = parsedRows
+    ? parsedRows.filter(r => r.valid).map(r => r.record)
+    : [];
+  const invalidCount = parsedRows
+    ? parsedRows.filter(r => !r.valid).length
+    : 0;
+
+  return (
+    <div style={styles.pFrame}>
+      <header style={styles.pHeader}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button onClick={onCancel} style={styles.pBackBtn}>
+            <ArrowLeft size={16} />
+          </button>
+          <div>
+            <div style={styles.pHeaderKicker}>Bulk import</div>
+            <div style={styles.pOrgName}>Upload testing data</div>
+          </div>
+        </div>
+      </header>
+
+      <p style={styles.aFilesIntro}>
+        Bring testing data in from a spreadsheet. Useful for backfilling historical results
+        or importing exports from devices like NordBord, ForceFrame, or Catapult.
+      </p>
+
+      {/* Easiest start: download the template */}
+      <div style={styles.testUploadHeroCard}>
+        <div style={styles.testUploadHeroLabel}>Easiest way to start</div>
+        <div style={styles.testUploadHeroTitle}>Download the template</div>
+        <p style={styles.testUploadHeroBody}>
+          It includes example rows so you can see the format, plus a list of every test name
+          available. Open it in Excel or Google Sheets, replace the examples with your data, save,
+          and upload below.
+        </p>
+        <button onClick={downloadTemplate} style={styles.testUploadHeroBtn}>
+          ↓ Download CSV template
+        </button>
+      </div>
+
+      {/* Quick reference for those skipping the template */}
+      <div style={styles.uploadFormatCard}>
+        <div style={styles.uploadFormatTitle}>Or build your own — quick reference</div>
+        <div style={styles.uploadFormatExample}>
+          <div style={styles.uploadFormatExampleHeader}>athlete,test,date,value,side,note</div>
+          <div style={styles.uploadFormatExampleRow}>
+            {athletes[0]?.name || 'Athlete name'},Yo-Yo IR1,{today()},1840,,Pre-season
+          </div>
+          <div style={styles.uploadFormatExampleRow}>
+            {athletes[0]?.name || 'Athlete name'},Nordic peak force,{today()},340,L,NordBord
+          </div>
+        </div>
+        <div style={styles.uploadFormatTips}>
+          <div style={styles.uploadFormatTip}>
+            <strong>athlete</strong> — the athlete's full name (case doesn't matter)
+          </div>
+          <div style={styles.uploadFormatTip}>
+            <strong>test</strong> — the test name (e.g. "Back squat 1RM"). Use the template for the full list.
+          </div>
+          <div style={styles.uploadFormatTip}>
+            <strong>date</strong> — YYYY-MM-DD format
+          </div>
+          <div style={styles.uploadFormatTip}>
+            <strong>value</strong> — just the number, no units
+          </div>
+          <div style={styles.uploadFormatTip}>
+            <strong>side</strong> — L or R for bilateral tests (Nordic, single-leg variants). Leave blank otherwise.
+          </div>
+          <div style={styles.uploadFormatTip}>
+            <strong>note</strong> — optional comment
+          </div>
+        </div>
+      </div>
+
+      {/* File input + paste area */}
+      <div style={styles.uploadInputCard}>
+        <div style={styles.uploadInputHead}>
+          <div style={styles.uploadInputLabel}>Choose a CSV file</div>
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv,text/csv"
+          onChange={handleFile}
+          style={{ fontSize: 13, fontFamily: 'inherit', marginBottom: 14 }}
+        />
+        <div style={styles.uploadInputDivider}>or paste CSV content below</div>
+        <textarea
+          value={csvText}
+          onChange={e => setCsvText(e.target.value)}
+          rows={6}
+          placeholder="athlete,test,date,value,side,note&#10;Tom Mercer,Yo-Yo IR1,2026-05-20,1840,,Pre-season"
+          style={styles.uploadTextarea}
+        />
+        <button
+          onClick={handleParse}
+          disabled={!csvText.trim()}
+          style={{
+            ...styles.uploadParseBtn,
+            opacity: csvText.trim() ? 1 : 0.4
+          }}
+        >
+          Validate & preview
+        </button>
+      </div>
+
+      {/* Preview */}
+      {parsedRows && (
+        <div style={styles.uploadPreviewCard}>
+          <div style={styles.uploadPreviewHead}>
+            <div>
+              <div style={styles.uploadPreviewTitle}>Preview</div>
+              <div style={styles.uploadPreviewMeta}>
+                {validRecords.length} valid · {invalidCount} {invalidCount === 1 ? 'error' : 'errors'}
+              </div>
+            </div>
+          </div>
+
+          {parsedRows.length === 0 ? (
+            <div style={styles.uploadPreviewEmpty}>
+              No rows found. Check that the CSV has a header row.
+            </div>
+          ) : (
+            <div style={styles.uploadPreviewList}>
+              {parsedRows.map((r, i) => (
+                <div
+                  key={i}
+                  style={{
+                    ...styles.testUploadRow,
+                    ...(r.valid ? {} : styles.testUploadRowInvalid)
+                  }}
+                >
+                  <div style={styles.testUploadRowNum}>
+                    Row {r.rowNum}
+                  </div>
+                  {r.valid ? (
+                    <div style={styles.testUploadRowOk}>
+                      <div style={styles.testUploadRowName}>
+                        {athletes.find(a => a.id === r.record.athleteId)?.name} ·{' '}
+                        {getTest(r.record.testKey).name}
+                      </div>
+                      <div style={styles.testUploadRowVal}>
+                        {r.record.value} {getTest(r.record.testKey).unit}
+                        {r.record.side ? ` (${r.record.side})` : ''}
+                        {' · '}{r.record.date}
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={styles.testUploadRowErr}>
+                      {r.errors.map((e, j) => (
+                        <div key={j} style={styles.testUploadErrText}>· {e}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div style={styles.inviteActions}>
+        <button style={styles.perfCancelBtn} onClick={onCancel}>Cancel</button>
+        <button
+          style={{
+            ...styles.perfSaveBtn,
+            opacity: validRecords.length > 0 ? 1 : 0.4
+          }}
+          disabled={validRecords.length === 0}
+          onClick={() => onSave(validRecords)}
+        >
+          Import {validRecords.length} {validRecords.length === 1 ? 'result' : 'results'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 
 // Drill-down view: list of athletes who took a specific test
 function TestDrillDown({ item, athletes, onBack, onPickAthlete }) {
@@ -4646,7 +7037,7 @@ function FilesTeamSection({ files, athletes, onPickAthlete }) {
 
   return (
     <div style={styles.perfPanel}>
-      <div style={styles.pFilters}>
+      <div className="tempo-scroll-x" style={styles.pFilters}>
         <span style={styles.pFilterLabel}>Type</span>
         {types.map(t => (
           <button key={t} onClick={() => setType(t)}
@@ -4838,6 +7229,350 @@ function UploadDataSection({ athletes, perfData }) {
 }
 
 
+// ============================================================
+// ContactsTeamView — staff directory of athlete contact details
+// Respects per-athlete sharing preferences
+// ============================================================
+function ContactsTeamView({ athletes, currentUser, links, onPickAthlete }) {
+  const [query, setQuery] = useState('');
+  const [expanded, setExpanded] = useState({}); // expanded user/athlete cards
+  const [staffOpen, setStaffOpen] = useState(true);
+  const [athletesOpen, setAthletesOpen] = useState(true);
+  const [users, setUsers] = useState([]);
+
+  useEffect(() => {
+    const seed = getSeedData();
+    setUsers(seed.teamUsers || []);
+  }, []);
+
+  // Staff = isStaff users other than current user
+  // Each staff member is visible to other staff (professional context)
+  const staffUsers = users.filter(u => u.isStaff && u.id !== currentUser?.id);
+
+  // Apply search filter to both lists
+  const matchesQuery = (str) => {
+    if (!query) return true;
+    return (str || '').toLowerCase().includes(query.toLowerCase());
+  };
+
+  const filteredStaff = staffUsers.filter(u =>
+    matchesQuery(u.name) || matchesQuery(u.title) || matchesQuery(u.role) || matchesQuery(u.email)
+  );
+
+  const filteredAthletes = athletes.filter(a =>
+    matchesQuery(a.name) || matchesQuery(a.position) || matchesQuery(a.playerId)
+  );
+
+  const toggle = (id) => {
+    setExpanded({ ...expanded, [id]: !expanded[id] });
+  };
+
+  // What we show for an athlete depends on their share prefs + viewer's perms
+  const visibleAthleteContact = (athlete) => {
+    const share = athlete.contactSharing || {};
+    const profile = athlete.profile || {};
+    const canSeeMedical = canAccess(currentUser, athlete.id, 'view_medical', links);
+    return {
+      phone:    share.phone    ? profile.contactPhone  : null,
+      email:    share.email    ? profile.contactEmail  : null,
+      emergencyName:  share.emergencyContact ? profile.emergencyName  : null,
+      emergencyPhone: share.emergencyContact ? profile.emergencyPhone : null,
+      emergencyRelation: share.emergencyContact ? profile.emergencyRelation : null,
+      gpName:   share.gp && canSeeMedical ? profile.gpName  : null,
+      gpPhone:  share.gp && canSeeMedical ? profile.gpPhone : null,
+      gpClinic: share.gp && canSeeMedical ? profile.gpClinic : null,
+      contactNote: share.notes || null
+    };
+  };
+
+  // For staff: simple — what they've shared
+  const visibleStaffContact = (u) => {
+    const share = u.contactSharing || { phone: true, email: true };
+    return {
+      phone: share.phone ? u.phone : null,
+      email: share.email ? u.email : null,
+      contactNote: u.contactNote || null
+    };
+  };
+
+  return (
+    <div>
+      {/* Search */}
+      <div style={styles.contactsSearchBar}>
+        <input
+          type="text"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Search by name, role or position"
+          style={styles.contactsSearchInput}
+        />
+        {query && (
+          <button
+            onClick={() => setQuery('')}
+            style={styles.contactsSearchClear}
+            aria-label="Clear"
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
+
+      <div style={styles.contactsHint}>
+        Showing only what each person has chosen to share. Athletes control their own privacy from the athlete app.
+      </div>
+
+      {/* ===== STAFF SECTION ===== */}
+      <div style={styles.contactsSectionWrap}>
+        <button
+          onClick={() => setStaffOpen(!staffOpen)}
+          style={styles.contactsSectionHead}
+        >
+          <div>
+            <div style={styles.contactsSectionLabel}>Staff</div>
+            <div style={styles.contactsSectionMeta}>
+              {filteredStaff.length} {filteredStaff.length === 1 ? 'person' : 'people'} at the club
+            </div>
+          </div>
+          <ChevronRight
+            size={18}
+            color="#5a564d"
+            style={{
+              transform: staffOpen ? 'rotate(90deg)' : 'none',
+              transition: 'transform 0.15s ease'
+            }}
+          />
+        </button>
+
+        {staffOpen && (
+          filteredStaff.length === 0 ? (
+            <div style={{ ...styles.perfEmpty, marginTop: 8 }}>
+              {query ? 'No staff match your search.' : 'No other staff to show.'}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+              {filteredStaff.map(u => {
+                const c = visibleStaffContact(u);
+                const isOpen = expanded[u.id];
+                const hasAny = c.phone || c.email;
+
+                return (
+                  <div key={u.id} style={styles.contactCard}>
+                    <button
+                      onClick={() => toggle(u.id)}
+                      style={styles.contactCardHead}
+                    >
+                      <div style={{ ...styles.contactCardAvatar, background: '#1a1a1a', color: '#f5f1e8' }}>
+                        {u.avatar}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={styles.contactCardName}>{u.name}</div>
+                        <div style={styles.contactCardMeta}>
+                          {u.title || ROLE_LABELS[u.role]}
+                        </div>
+                      </div>
+                      <ChevronRight
+                        size={16}
+                        color="#8a8275"
+                        style={{
+                          transform: isOpen ? 'rotate(90deg)' : 'none',
+                          transition: 'transform 0.15s ease'
+                        }}
+                      />
+                    </button>
+
+                    {isOpen && (
+                      <div style={styles.contactCardBody}>
+                        {!hasAny ? (
+                          <div style={styles.contactNotShared}>
+                            {u.name.split(' ')[0]} hasn't shared direct contact details.
+                          </div>
+                        ) : (
+                          <div style={styles.contactSection}>
+                            <div style={styles.contactSectionLabelInner}>Direct</div>
+                            {c.phone && (
+                              <a href={`tel:${c.phone}`} style={styles.contactRow}>
+                                <span style={styles.contactRowLabel}>Phone</span>
+                                <span style={styles.contactRowValue}>{c.phone}</span>
+                              </a>
+                            )}
+                            {c.email && (
+                              <a href={`mailto:${c.email}`} style={styles.contactRow}>
+                                <span style={styles.contactRowLabel}>Email</span>
+                                <span style={styles.contactRowValue}>{c.email}</span>
+                              </a>
+                            )}
+                          </div>
+                        )}
+
+                        {c.contactNote && (
+                          <div style={styles.contactNote}>
+                            <span style={styles.contactNoteIcon}>◌</span>
+                            <span>{c.contactNote}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )
+        )}
+      </div>
+
+      {/* ===== ATHLETES SECTION ===== */}
+      <div style={styles.contactsSectionWrap}>
+        <button
+          onClick={() => setAthletesOpen(!athletesOpen)}
+          style={styles.contactsSectionHead}
+        >
+          <div>
+            <div style={styles.contactsSectionLabel}>Athletes</div>
+            <div style={styles.contactsSectionMeta}>
+              {filteredAthletes.length} of {athletes.length} {athletes.length === 1 ? 'athlete' : 'athletes'} accessible
+            </div>
+          </div>
+          <ChevronRight
+            size={18}
+            color="#5a564d"
+            style={{
+              transform: athletesOpen ? 'rotate(90deg)' : 'none',
+              transition: 'transform 0.15s ease'
+            }}
+          />
+        </button>
+
+        {athletesOpen && (
+          filteredAthletes.length === 0 ? (
+            <div style={{ ...styles.perfEmpty, marginTop: 8 }}>
+              {query ? 'No athletes match your search.' : 'No athletes accessible.'}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+              {filteredAthletes.map(a => {
+                const c = visibleAthleteContact(a);
+                const isOpen = expanded[a.id];
+                const hasAny = c.phone || c.email || c.emergencyName || c.gpName;
+                const initial = a.name.split(' ').map(p => p[0]).slice(0, 2).join('');
+
+                return (
+                  <div key={a.id} style={styles.contactCard}>
+                    <button
+                      onClick={() => toggle(a.id)}
+                      style={styles.contactCardHead}
+                    >
+                      <div style={styles.contactCardAvatar}>{initial}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={styles.contactCardName}>{a.name}</div>
+                        <div style={styles.contactCardMeta}>
+                          {a.position} · {a.playerId}
+                        </div>
+                      </div>
+                      <ChevronRight
+                        size={16}
+                        color="#8a8275"
+                        style={{
+                          transform: isOpen ? 'rotate(90deg)' : 'none',
+                          transition: 'transform 0.15s ease'
+                        }}
+                      />
+                    </button>
+
+                    {isOpen && (
+                      <div style={styles.contactCardBody}>
+                        {!hasAny ? (
+                          <div style={styles.contactNotShared}>
+                            {a.name.split(' ')[0]} hasn't shared any contact details with you.
+                          </div>
+                        ) : (
+                          <>
+                            {(c.phone || c.email) && (
+                              <div style={styles.contactSection}>
+                                <div style={styles.contactSectionLabelInner}>Direct</div>
+                                {c.phone && (
+                                  <a href={`tel:${c.phone}`} style={styles.contactRow}>
+                                    <span style={styles.contactRowLabel}>Phone</span>
+                                    <span style={styles.contactRowValue}>{c.phone}</span>
+                                  </a>
+                                )}
+                                {c.email && (
+                                  <a href={`mailto:${c.email}`} style={styles.contactRow}>
+                                    <span style={styles.contactRowLabel}>Email</span>
+                                    <span style={styles.contactRowValue}>{c.email}</span>
+                                  </a>
+                                )}
+                              </div>
+                            )}
+
+                            {c.emergencyName && (
+                              <div style={styles.contactSection}>
+                                <div style={styles.contactSectionLabelInner}>Emergency</div>
+                                <div style={styles.contactRow}>
+                                  <span style={styles.contactRowLabel}>{c.emergencyRelation || 'Contact'}</span>
+                                  <span style={styles.contactRowValue}>{c.emergencyName}</span>
+                                </div>
+                                {c.emergencyPhone && (
+                                  <a href={`tel:${c.emergencyPhone}`} style={styles.contactRow}>
+                                    <span style={styles.contactRowLabel}>Phone</span>
+                                    <span style={styles.contactRowValue}>{c.emergencyPhone}</span>
+                                  </a>
+                                )}
+                              </div>
+                            )}
+
+                            {c.gpName && (
+                              <div style={{ ...styles.contactSection, ...styles.contactSectionMedical }}>
+                                <div style={styles.contactSectionLabelMedical}>
+                                  GP / Clinician · medical-restricted
+                                </div>
+                                <div style={styles.contactRow}>
+                                  <span style={styles.contactRowLabel}>Doctor</span>
+                                  <span style={styles.contactRowValue}>{c.gpName}</span>
+                                </div>
+                                {c.gpClinic && (
+                                  <div style={styles.contactRow}>
+                                    <span style={styles.contactRowLabel}>Clinic</span>
+                                    <span style={styles.contactRowValue}>{c.gpClinic}</span>
+                                  </div>
+                                )}
+                                {c.gpPhone && (
+                                  <a href={`tel:${c.gpPhone}`} style={styles.contactRow}>
+                                    <span style={styles.contactRowLabel}>Phone</span>
+                                    <span style={styles.contactRowValue}>{c.gpPhone}</span>
+                                  </a>
+                                )}
+                              </div>
+                            )}
+
+                            {c.contactNote && (
+                              <div style={styles.contactNote}>
+                                <span style={styles.contactNoteIcon}>◌</span>
+                                <span>{c.contactNote}</span>
+                              </div>
+                            )}
+                          </>
+                        )}
+
+                        <button
+                          onClick={() => onPickAthlete(a.id)}
+                          style={styles.contactProfileBtn}
+                        >
+                          Open full profile →
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )
+        )}
+      </div>
+    </div>
+  );
+}
+
+
 function StatusDot({ status }) {
   const map = {
     'Stable': { color: '#4a6741', label: 'Stable' },
@@ -4907,7 +7642,7 @@ function AthleteDetail({ row, notes, perfData, currentUser, links, recordAudit, 
         <StatusDot status={row.status} />
       </header>
 
-      <div style={styles.pTabBar}>
+      <div className="tempo-scroll-x" style={styles.pTabBar}>
         {['overview', 'workload', 'wellness', 'notes', 'performance'].map(t => (
           <button key={t} onClick={() => setTab(t)}
             style={{ ...styles.pTab, ...(tab === t ? styles.pTabActive : {}) }}>
@@ -5324,6 +8059,9 @@ function GpsWidget({ workouts, onView }) {
   const totalHighSpeed = recent.reduce((s, w) => s + (w.highSpeedDistanceM || 0), 0);
   const totalSprintDist = recent.reduce((s, w) => s + (w.sprintDistanceM || 0), 0);
   const totalSprints = recent.reduce((s, w) => s + (w.sprintEfforts || 0), 0);
+  const totalDurationMin = recent.reduce((s, w) => s + (w.durationMin || 0), 0);
+  const totalHours = Math.floor(totalDurationMin / 60);
+  const totalRemainingMin = Math.round(totalDurationMin % 60);
   const maxVel = Math.max(0, ...recent.map(w => w.maxVelocityMps || 0));
   const avgHrVals = recent.filter(w => w.avgHr).map(w => w.avgHr);
   const avgHr = avgHrVals.length > 0 ? Math.round(avgHrVals.reduce((a, b) => a + b, 0) / avgHrVals.length) : null;
@@ -5354,6 +8092,15 @@ function GpsWidget({ workouts, onView }) {
 
       {/* Big four */}
       <div style={styles.gpsBigGrid}>
+        <div style={styles.gpsBigCell}>
+          <div style={styles.testSummaryStatLabel}>Training time</div>
+          <div style={styles.gpsBigValue}>
+            {totalHours > 0 ? totalHours : ''}
+            {totalHours > 0 && <span style={styles.testSummaryStatUnit}>h </span>}
+            {totalRemainingMin}
+            <span style={styles.testSummaryStatUnit}>m</span>
+          </div>
+        </div>
         <div style={styles.gpsBigCell}>
           <div style={styles.testSummaryStatLabel}>Total distance</div>
           <div style={styles.gpsBigValue}>
@@ -5472,6 +8219,8 @@ function AthletePerformanceTab({ athlete, perfData, currentUser, links, recordAu
 
   const myInjuries = perfData.injuries
     .filter(i => i.athleteId === athlete.id)
+    // Per-injury exclusion: athletes can hide a specific injury from a specific staff member
+    .filter(i => !((i.sharing?.excluded || []).includes(currentUser?.id)))
     .sort((a, b) => b.reportedOn.localeCompare(a.reportedOn));
 
   const myTests = perfData.tests
@@ -5560,16 +8309,25 @@ function AthletePerformanceTab({ athlete, perfData, currentUser, links, recordAu
             {myInjuries.length === 0 ? (
               <div style={styles.perfEmpty}>No injuries recorded.</div>
             ) : (
-              myInjuries.map(inj => (
-                <InjuryDetailCard
-                  key={inj.id}
-                  inj={inj}
-                  canMedical={canMedical}
-                  canEdit={canEditInjuries}
-                  onOpen={() => recordAudit?.('view_injuries', athlete.id, `Opened injury: ${inj.bodyRegion}`)}
-                  onUpdate={(patch) => perfData.updateInjury(inj.id, patch)}
-                />
-              ))
+              myInjuries.map(inj => {
+                // Per-injury sharing override:
+                //  - athletes can explicitly include a staff member who otherwise wouldn't see medical
+                //  - (excluded staff are filtered out upstream — they don't see the injury at all)
+                const sharing = inj.sharing || {};
+                const includedForMedical = (sharing.included || []).includes(currentUser?.id);
+                const canMedicalForThis = includedForMedical || canMedical;
+                return (
+                  <InjuryDetailCard
+                    key={inj.id}
+                    inj={inj}
+                    canMedical={canMedicalForThis}
+                    canEdit={canEditInjuries}
+                    currentUser={currentUser}
+                    onOpen={() => recordAudit?.('view_injuries', athlete.id, `Opened injury: ${inj.bodyRegion}`)}
+                    onUpdate={(patch) => perfData.updateInjury(inj.id, patch)}
+                  />
+                );
+              })
             )}
 
             {showAddInjury && canEditInjuries && (
@@ -5750,8 +8508,10 @@ function AthletePerformanceTab({ athlete, perfData, currentUser, links, recordAu
   );
 }
 
-function InjuryDetailCard({ inj, canMedical, canEdit, onOpen, onUpdate }) {
+function InjuryDetailCard({ inj, canMedical, canEdit, currentUser, onOpen, onUpdate }) {
   const [expanded, setExpanded] = useState(false);
+  const [confirmStageUndo, setConfirmStageUndo] = useState(null); // stage index to confirm undoing
+  const [editingStatus, setEditingStatus] = useState(false);
   const dotColor = inj.status === 'returned' ? '#3a8a4d'
                 : inj.status === 'modified' ? '#d4a017'
                 : '#c8472b';
@@ -5764,6 +8524,43 @@ function InjuryDetailCard({ inj, canMedical, canEdit, onOpen, onUpdate }) {
     const next = !expanded;
     setExpanded(next);
     if (next) onOpen?.();
+  };
+
+  const toggleStage = (index) => {
+    if (!canEdit) return;
+    const stage = inj.rtpProgress[index];
+    if (stage.achieved) {
+      // Undoing — confirm first to prevent accidents
+      setConfirmStageUndo(index);
+      return;
+    }
+    // Marking complete — no confirmation needed
+    const newProgress = inj.rtpProgress.map((s, i) =>
+      i === index ? {
+        ...s,
+        achieved: true,
+        date: today(),
+        completedBy: currentUser?.name || 'Unknown'
+      } : s
+    );
+    onUpdate({ rtpProgress: newProgress });
+  };
+
+  const confirmUndoStage = () => {
+    const newProgress = inj.rtpProgress.map((s, i) =>
+      i === confirmStageUndo ? { ...s, achieved: false, date: null, completedBy: null } : s
+    );
+    onUpdate({ rtpProgress: newProgress });
+    setConfirmStageUndo(null);
+  };
+
+  const updateStatus = (newStatus) => {
+    onUpdate({
+      status: newStatus,
+      statusChangedAt: new Date().toISOString(),
+      statusChangedBy: currentUser?.name || 'Unknown'
+    });
+    setEditingStatus(false);
   };
 
   return (
@@ -5816,16 +8613,134 @@ function InjuryDetailCard({ inj, canMedical, canEdit, onOpen, onUpdate }) {
               </div>
               <div style={{ marginTop: 8 }}>
                 {inj.rtpProgress.map((s, i) => (
-                  <div key={i} style={{
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    padding: '4px 0', fontSize: 12,
-                    color: s.achieved ? '#1a1a1a' : '#8a8275'
-                  }}>
-                    <span>{s.achieved ? '✓' : '○'} {s.stage}</span>
-                    {s.date && <span style={{ fontSize: 11, color: '#8a8275' }}>{fmtShort(s.date)}</span>}
+                  <div key={i}>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleStage(i); }}
+                      disabled={!canEdit}
+                      style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                        padding: '8px 10px', fontSize: 12,
+                        width: '100%',
+                        background: canEdit && s.achieved ? '#f5f1e8' : 'transparent',
+                        border: 'none', borderRadius: 6,
+                        color: s.achieved ? '#1a1a1a' : '#8a8275',
+                        cursor: canEdit ? 'pointer' : 'default',
+                        fontFamily: 'inherit', textAlign: 'left',
+                        marginBottom: 2
+                      }}
+                    >
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
+                        <span style={{
+                          width: 18, height: 18, borderRadius: 4,
+                          border: s.achieved ? '2px solid #3a8a4d' : '2px solid #c8b894',
+                          background: s.achieved ? '#3a8a4d' : 'transparent',
+                          color: '#fdfbf5', display: 'inline-flex',
+                          alignItems: 'center', justifyContent: 'center',
+                          fontSize: 11, fontWeight: 700, flexShrink: 0
+                        }}>
+                          {s.achieved ? '✓' : ''}
+                        </span>
+                        <span style={{ flex: 1, minWidth: 0 }}>{s.stage}</span>
+                      </span>
+                      {s.date && (
+                        <span style={{ fontSize: 10, color: '#8a8275', textAlign: 'right', flexShrink: 0, marginLeft: 8 }}>
+                          {fmtShort(s.date)}
+                          {s.completedBy && (
+                            <div style={{ fontSize: 9, color: '#b8b1a0', marginTop: 2 }}>by {s.completedBy}</div>
+                          )}
+                        </span>
+                      )}
+                    </button>
+                    {confirmStageUndo === i && (
+                      <div style={{
+                        background: '#fdf5f0', border: '1px solid #f0cbb8',
+                        borderRadius: 8, padding: 12, margin: '4px 0 8px',
+                        fontSize: 12
+                      }}>
+                        <div style={{ color: '#9c3a23', marginBottom: 8 }}>
+                          Mark "{s.stage}" as not yet achieved?
+                        </div>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button
+                            style={{ ...styles.deleteConfirmCancel, fontSize: 12, padding: '6px 12px' }}
+                            onClick={() => setConfirmStageUndo(null)}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            style={{ ...styles.deleteConfirmConfirm, fontSize: 12, padding: '6px 12px' }}
+                            onClick={confirmUndoStage}
+                          >
+                            Yes, undo
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
+              {canEdit && (
+                <div style={{ fontSize: 10, color: '#8a8275', marginTop: 8, fontStyle: 'italic', textAlign: 'center' }}>
+                  Tap a milestone to mark it complete. Anyone with edit access can contribute.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Status — editable with confirmation */}
+          {canEdit && (
+            <div style={styles.injStatusEdit}>
+              <div style={styles.injStatusEditLabel}>Availability</div>
+              <div style={styles.injStatusEditRow}>
+                {['out', 'modified', 'returned'].map(s => (
+                  <button
+                    key={s}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (s === inj.status) return;
+                      if (s === 'returned' && inj.status !== 'returned') {
+                        // Closing the injury — confirm
+                        setEditingStatus(true);
+                      } else {
+                        updateStatus(s);
+                      }
+                    }}
+                    style={{
+                      ...styles.injStatusBtn,
+                      ...(s === inj.status ? styles.injStatusBtnActive : {})
+                    }}
+                  >
+                    {s === 'out' ? 'Out' : s === 'modified' ? 'Modified training' : 'Returned'}
+                  </button>
+                ))}
+              </div>
+              {inj.statusChangedBy && (
+                <div style={styles.injStatusMeta}>
+                  Last changed by {inj.statusChangedBy}
+                  {inj.statusChangedAt && ` · ${fmtShort(inj.statusChangedAt.slice(0,10))}`}
+                </div>
+              )}
+              {editingStatus && (
+                <div style={styles.deleteConfirm}>
+                  <div style={styles.deleteConfirmText}>
+                    Mark this injury as returned and close it? You can re-open it later if needed.
+                  </div>
+                  <div style={styles.deleteConfirmActions}>
+                    <button
+                      style={styles.deleteConfirmCancel}
+                      onClick={() => setEditingStatus(false)}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      style={{ ...styles.deleteConfirmConfirm, background: '#3a8a4d' }}
+                      onClick={() => updateStatus('returned')}
+                    >
+                      Yes, close it
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -7149,6 +10064,178 @@ function WellnessChart({ data, height = 100 }) {
 }
 
 // ============================================================
+// FeedbackWidget — floating button + form for tester feedback
+// Always present. Submits via mailto: so testers don't need backend.
+// ============================================================
+function FeedbackWidget({ currentUser }) {
+  const [open, setOpen] = useState(false);
+  const [category, setCategory] = useState(null);
+  const [message, setMessage] = useState('');
+  const [sent, setSent] = useState(false);
+
+  const categories = [
+    { k: 'confusing',    l: 'Something was confusing',  emoji: '?' },
+    { k: 'missing',      l: 'Something is missing',     emoji: '＋' },
+    { k: 'broken',       l: "Something doesn't work",   emoji: '!' },
+    { k: 'idea',         l: 'I have an idea',           emoji: '◇' },
+    { k: 'general',      l: 'General comment',          emoji: '◌' }
+  ];
+
+  const [copied, setCopied] = useState(false);
+
+  const handleSend = () => {
+    const cat = categories.find(c => c.k === category);
+    const subject = `Tempo feedback: ${cat?.l || 'comment'}`;
+    const context = currentUser
+      ? `\n\n— sent while signed in as ${currentUser.name} (${currentUser.role})`
+      : '\n\n— sent from the login screen';
+    const body = `${message}${context}\n\nDemo version: ${DEMO_VERSION}\nURL: ${typeof window !== 'undefined' ? window.location.href : ''}`;
+
+    // Always copy to clipboard so testers have a fallback
+    const clipboardText = `To: ${FEEDBACK_EMAIL}\nSubject: ${subject}\n\n${body}`;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(clipboardText);
+        setCopied(true);
+      }
+    } catch {
+      // Some browsers (older Safari, embedded contexts) reject clipboard writes.
+      // We still try mailto: below — at minimum that's a path forward.
+    }
+
+    // Try to open the mail app as a convenience
+    const mailto = `mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    try { window.location.href = mailto; } catch {}
+
+    setSent(true);
+    // Reset after a beat
+    setTimeout(() => {
+      setOpen(false);
+      setSent(false);
+      setCopied(false);
+      setCategory(null);
+      setMessage('');
+    }, 3500);
+  };
+
+  const close = () => {
+    setOpen(false);
+    setCategory(null);
+    setMessage('');
+    setSent(false);
+    setCopied(false);
+  };
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        style={styles.feedbackFloater}
+        aria-label="Send feedback"
+      >
+        <span style={styles.feedbackFloaterText}>Feedback</span>
+      </button>
+
+      {open && (
+        <div style={styles.feedbackBackdrop} onClick={close}>
+          <div style={styles.feedbackSheet} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.userSheetGrip} />
+
+            {sent ? (
+              <div style={styles.feedbackSent}>
+                <div style={styles.feedbackSentIcon}>✓</div>
+                <div style={styles.feedbackSentTitle}>Thanks</div>
+                {copied ? (
+                  <>
+                    <div style={styles.feedbackSentText}>
+                      Copied to your clipboard. If your email app didn't open, paste it into a new message to:
+                    </div>
+                    <div style={styles.feedbackEmailChip}>{FEEDBACK_EMAIL}</div>
+                  </>
+                ) : (
+                  <>
+                    <div style={styles.feedbackSentText}>
+                      If your email app didn't open, please send your feedback directly to:
+                    </div>
+                    <div style={styles.feedbackEmailChip}>{FEEDBACK_EMAIL}</div>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div style={styles.feedbackBody}>
+                <div style={styles.feedbackHead}>
+                  <div>
+                    <div style={styles.feedbackTitle}>Send feedback</div>
+                    <div style={styles.feedbackSubtitle}>
+                      Anything confusing, missing, or off? Let me know.
+                    </div>
+                  </div>
+                  <button
+                    onClick={close}
+                    style={styles.userSheetClose}
+                    aria-label="Close"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div style={styles.feedbackCatLabel}>What kind of feedback?</div>
+                <div style={styles.feedbackCatGrid}>
+                  {categories.map(c => (
+                    <button
+                      key={c.k}
+                      onClick={() => setCategory(c.k)}
+                      style={{
+                        ...styles.feedbackCatBtn,
+                        ...(category === c.k ? styles.feedbackCatBtnActive : {})
+                      }}
+                    >
+                      <span style={styles.feedbackCatEmoji}>{c.emoji}</span>
+                      <span style={styles.feedbackCatLabelInner}>{c.l}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <div style={styles.feedbackCatLabel}>Tell me more</div>
+                <textarea
+                  style={styles.feedbackTextarea}
+                  rows="4"
+                  value={message}
+                  onChange={e => setMessage(e.target.value)}
+                  placeholder={
+                    category === 'confusing' ? "What confused you? Where were you in the app?" :
+                    category === 'missing'   ? "What were you trying to do?" :
+                    category === 'broken'    ? "What did you tap? What did you expect to happen?" :
+                    category === 'idea'      ? "What's the idea? What problem would it solve?" :
+                                              "Whatever's on your mind."
+                  }
+                />
+
+                <button
+                  onClick={handleSend}
+                  disabled={!category || !message.trim()}
+                  style={{
+                    ...styles.feedbackSendBtn,
+                    opacity: (category && message.trim()) ? 1 : 0.4
+                  }}
+                >
+                  Send feedback
+                </button>
+
+                <p style={styles.feedbackNote}>
+                  Copies to your clipboard and tries to open your email app. If email doesn't open, paste into a new message to {FEEDBACK_EMAIL}.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+
+// ============================================================
 // ROOT
 // ============================================================
 export default function App() {
@@ -7219,6 +10306,7 @@ export default function App() {
       <div style={styles.root}>
         <style>{globalCSS}</style>
         <LoginScreen onLogin={handleLogin} />
+        <FeedbackWidget currentUser={null} />
       </div>
     );
   }
@@ -7259,37 +10347,81 @@ export default function App() {
           onLogout={handleLogout}
         />
       )}
+      <FeedbackWidget currentUser={currentUser} />
     </div>
   );
 }
 
 // ============================================================
-// Intro screen — one tap to begin
+// Intro screen — landing page for testers
 // ============================================================
 function IntroScreen({ onContinue }) {
   return (
     <div style={styles.introFrame}>
       <div style={styles.introInner}>
-        <div style={styles.introMark}>◐</div>
-        <div style={styles.introBrand}>tempo</div>
-        <div style={styles.introTagline}>A calm training load monitor.</div>
+        {/* Brand */}
+        <div style={styles.introBrandRow}>
+          <div style={styles.introMark}>◐</div>
+          <div style={styles.introBrand}>tempo</div>
+        </div>
 
-        <div style={styles.introBody}>
-          <p style={styles.introPara}>
-            Tempo helps athletes track training load and recovery without the noise.
-            Coaches and clinicians see the same data, with permission.
-          </p>
-          <p style={styles.introPara}>
-            This is a prototype. Data is stored locally on this device.
+        {/* One-liner */}
+        <h1 style={styles.introHeadline}>
+          Training load monitoring for athletes and the people helping them.
+        </h1>
+
+        <p style={styles.introSubhead}>
+          A calm daily check-in for athletes, a clear caseload view for coaches and clinicians,
+          and consent-first sharing between them.
+        </p>
+
+        {/* Who it's for */}
+        <div style={styles.introWhoCard}>
+          <div style={styles.introWhoLabel}>For</div>
+          <div style={styles.introWhoList}>
+            <div style={styles.introWhoItem}>
+              <span style={styles.introWhoIcon}>↑</span>
+              <span style={styles.introWhoText}>
+                <strong>Recreational athletes</strong> — runners, cyclists, gym, hybrid, team sport
+              </span>
+            </div>
+            <div style={styles.introWhoItem}>
+              <span style={styles.introWhoIcon}>◆</span>
+              <span style={styles.introWhoText}>
+                <strong>Coaches</strong> — S&C, head coaches, personal trainers
+              </span>
+            </div>
+            <div style={styles.introWhoItem}>
+              <span style={styles.introWhoIcon}>＋</span>
+              <span style={styles.introWhoText}>
+                <strong>Clinicians</strong> — physios, sports doctors, allied health
+              </span>
+            </div>
+            <div style={styles.introWhoItem}>
+              <span style={styles.introWhoIcon}>◇</span>
+              <span style={styles.introWhoText}>
+                <strong>Clubs</strong> — single team, multi-squad, or full organisations
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Demo notice */}
+        <div style={styles.introDemoBox}>
+          <div style={styles.introDemoLabel}>You're seeing the demo</div>
+          <p style={styles.introDemoText}>
+            Nothing you do is saved. Reload to start fresh. Sign in as a seeded user to see
+            populated data, or create a new account to experience signup.
           </p>
         </div>
 
+        {/* CTA */}
         <button style={styles.introCta} onClick={onContinue}>
-          Begin
+          Open Tempo
         </button>
 
         <div style={styles.introFoot}>
-          Working draft · v0.1
+          Prototype · v0.4 · Feedback welcome
         </div>
       </div>
     </div>
@@ -7299,10 +10431,424 @@ function IntroScreen({ onContinue }) {
 // ============================================================
 // LoginScreen — real-looking login with demo-mode shortcut
 // ============================================================
+// ============================================================
+// SignupFlow — onboarding for new independent athletes
+// Three-step flow: identity → sport → welcome
+// ============================================================
+function SignupFlow({ onComplete, onCancel }) {
+  const [step, setStep] = useState('who'); // who | identity | sport | role | welcome
+  const [accountType, setAccountType] = useState(null); // 'athlete' | 'staff'
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [sport, setSport] = useState(null);
+  const [staffRole, setStaffRole] = useState(null);
+  const [staffTitle, setStaffTitle] = useState('');
+  const [emailError, setEmailError] = useState(null);
+
+  const sports = [
+    { k: 'running',       l: 'Running',                     desc: 'Road, trail, ultra, marathon', icon: '↑' },
+    { k: 'cycling',       l: 'Cycling',                     desc: 'Road, MTB, gravel, indoor',   icon: '◯' },
+    { k: 'strength',      l: 'Strength training',           desc: 'Gym, powerlifting, CrossFit', icon: '▣' },
+    { k: 'hybrid',        l: 'Hybrid training',             desc: 'Mix of strength + endurance', icon: '◐' },
+    { k: 'triathlon',     l: 'Triathlon / multisport',      desc: 'Swim, bike, run combined',    icon: '△' },
+    { k: 'team',          l: 'Team sport',                  desc: 'Football, rugby, hockey, etc.', icon: '◆' },
+    { k: 'other',         l: 'Other / general',             desc: 'Mixed training, fitness',     icon: '○' }
+  ];
+
+  const staffRoles = [
+    { k: 'sc_coach',   l: 'S&C Coach / Trainer',          desc: 'Strength & conditioning, personal trainer',
+      titlePlaceholder: 'e.g. Head of S&C' },
+    { k: 'head_coach', l: 'Coach',                        desc: 'Sport-specific coach, head coach, assistant',
+      titlePlaceholder: 'e.g. Head Coach' },
+    { k: 'physio',     l: 'Physio / Clinician',           desc: 'Physiotherapist, sports doctor, chiropractor',
+      titlePlaceholder: 'e.g. Sports Physiotherapist' },
+    { k: 'consultant', l: 'Consultant / External support', desc: 'Sports scientist, advisor, specialist',
+      titlePlaceholder: 'e.g. Sports Scientist' },
+    { k: 'club_admin', l: 'Club / Team administrator',    desc: 'Manages team rosters and access',
+      titlePlaceholder: 'e.g. Operations Manager' }
+  ];
+
+  const handleIdentityNext = () => {
+    setEmailError(null);
+    if (!name.trim()) return;
+    if (!email.trim() || !/^.+@.+\..+/.test(email)) {
+      setEmailError('Enter a valid email.');
+      return;
+    }
+    if (!password || password.length < 6) {
+      setEmailError('Password must be at least 6 characters.');
+      return;
+    }
+    // Check for collision with seeded user emails
+    const seed = getSeedData();
+    if ((seed.teamUsers || []).find(u => u.email.toLowerCase() === email.trim().toLowerCase())) {
+      setEmailError('That email is already in use. Try signing in instead.');
+      return;
+    }
+    setStep(accountType === 'staff' ? 'role' : 'sport');
+  };
+
+  const handleFinish = () => {
+    const id = `usr_new_${Date.now().toString(36)}`;
+    const avatar = name.trim().split(/\s+/).map(p => p[0]).slice(0, 2).join('').toUpperCase() || '?';
+
+    if (accountType === 'staff') {
+      const roleInfo = staffRoles.find(r => r.k === staffRole);
+      const newUser = {
+        id, name: name.trim(), email: email.trim().toLowerCase(),
+        role: staffRole,
+        title: staffTitle.trim() || roleInfo?.l || '',
+        orgRole: staffRole === 'club_admin' ? 'admin'
+              : staffRole === 'physio'     ? 'clinician'
+              : staffRole === 'consultant' ? 'consultant'
+              : 'coach',
+        isStaff: true, avatar,
+        phone: '',
+        contactSharing: { phone: false, email: true }
+      };
+      // Staff signup creates a user but no athlete. They start with an empty caseload.
+      onComplete(newUser, null);
+      return;
+    }
+
+    // Athlete signup
+    const athleteId = `ath_new_${Date.now().toString(36)}`;
+    const sportInfo = sports.find(s => s.k === sport);
+    const newUser = {
+      id, name: name.trim(), email: email.trim().toLowerCase(), role: 'athlete',
+      athleteId, isStaff: false, avatar, independent: true
+    };
+    const newAthlete = {
+      id: athleteId,
+      name: name.trim(),
+      playerId: null,
+      team: null,  // independent
+      squad: null,
+      position: sportInfo?.l || 'Athlete',
+      injuryStatus: 'available',
+      injuryNote: null,
+      profile: {
+        primarySport: sportInfo?.l || 'General training',
+        contactEmail: email.trim().toLowerCase()
+      },
+      contactSharing: { phone: false, email: true, emergencyContact: false, gp: false, notes: '' },
+      ownerUserId: id
+    };
+    onComplete(newUser, newAthlete);
+  };
+
+  // ===== STEP: IDENTITY =====
+  // ===== STEP: WHO =====
+  if (step === 'who') {
+    return (
+      <div style={styles.loginFrame}>
+        <div style={styles.loginInner}>
+          <div style={styles.signupStep}>Step 1 of 4</div>
+          <h1 style={styles.signupTitle}>Welcome to Tempo</h1>
+          <p style={styles.signupIntro}>
+            Let's get you set up. First — are you signing up as an athlete tracking your own training,
+            or as a coach, clinician, or other support person?
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <button
+              onClick={() => setAccountType('athlete')}
+              style={{
+                ...styles.signupSportBtn,
+                ...(accountType === 'athlete' ? styles.signupSportBtnActive : {})
+              }}
+            >
+              <span style={styles.signupSportIcon}>◐</span>
+              <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+                <div style={styles.signupSportLabel}>I'm an athlete</div>
+                <div style={styles.signupSportDesc}>Track my training, monitor wellness, invite support staff</div>
+              </div>
+            </button>
+
+            <button
+              onClick={() => setAccountType('staff')}
+              style={{
+                ...styles.signupSportBtn,
+                ...(accountType === 'staff' ? styles.signupSportBtnActive : {})
+              }}
+            >
+              <span style={styles.signupSportIcon}>◆</span>
+              <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+                <div style={styles.signupSportLabel}>I'm a coach or clinician</div>
+                <div style={styles.signupSportDesc}>Work with athletes, manage caseload, leave notes</div>
+              </div>
+            </button>
+          </div>
+
+          <div style={styles.signupActions}>
+            <button style={styles.perfCancelBtn} onClick={onCancel}>Cancel</button>
+            <button
+              style={{ ...styles.loginSubmit, flex: 1, opacity: accountType ? 1 : 0.4 }}
+              disabled={!accountType}
+              onClick={() => setStep('identity')}
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (step === 'identity') {
+    return (
+      <div style={styles.loginFrame}>
+        <div style={styles.loginInner}>
+          <div style={styles.signupStep}>Step 2 of 4</div>
+          <h1 style={styles.signupTitle}>
+            {accountType === 'staff' ? 'Tell us about yourself' : 'Welcome to Tempo'}
+          </h1>
+          <p style={styles.signupIntro}>
+            {accountType === 'staff'
+              ? 'Just a few details to set up your account. You can add more later.'
+              : 'Track your training, monitor your wellness, and share your data with the people helping you. Just a couple of details to get started.'}
+          </p>
+
+          <div style={styles.loginField}>
+            <label style={styles.loginLabel}>Your name</label>
+            <input
+              style={styles.loginInput}
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="Alex Morgan"
+              autoFocus
+            />
+          </div>
+          <div style={styles.loginField}>
+            <label style={styles.loginLabel}>Email</label>
+            <input
+              type="email"
+              style={styles.loginInput}
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              autoCapitalize="off"
+              autoCorrect="off"
+            />
+          </div>
+          <div style={styles.loginField}>
+            <label style={styles.loginLabel}>Password</label>
+            <input
+              type="password"
+              style={styles.loginInput}
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder="At least 6 characters"
+            />
+          </div>
+
+          {emailError && <div style={styles.loginError}>{emailError}</div>}
+
+          <div style={styles.signupActions}>
+            <button style={styles.perfCancelBtn} onClick={() => setStep('who')}>Back</button>
+            <button
+              style={{ ...styles.loginSubmit, flex: 1 }}
+              onClick={handleIdentityNext}
+            >
+              Continue
+            </button>
+          </div>
+
+          <p style={styles.signupFinePrint}>
+            By continuing, you agree this is a demo build. No data leaves your device.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ===== STEP: SPORT =====
+  // ===== STEP: ROLE (staff only) =====
+  if (step === 'role') {
+    const roleInfo = staffRoles.find(r => r.k === staffRole);
+    return (
+      <div style={styles.loginFrame}>
+        <div style={styles.loginInner}>
+          <div style={styles.signupStep}>Step 3 of 4</div>
+          <h1 style={styles.signupTitle}>What's your role?</h1>
+          <p style={styles.signupIntro}>
+            This sets up sensible default permissions for the athletes you work with.
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {staffRoles.map(r => (
+              <button
+                key={r.k}
+                onClick={() => setStaffRole(r.k)}
+                style={{
+                  ...styles.signupSportBtn,
+                  ...(staffRole === r.k ? styles.signupSportBtnActive : {})
+                }}
+              >
+                <span style={styles.signupSportIcon}>◆</span>
+                <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+                  <div style={styles.signupSportLabel}>{r.l}</div>
+                  <div style={styles.signupSportDesc}>{r.desc}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {staffRole && (
+            <div style={styles.loginField}>
+              <label style={styles.loginLabel}>Title (optional)</label>
+              <input
+                style={styles.loginInput}
+                value={staffTitle}
+                onChange={e => setStaffTitle(e.target.value)}
+                placeholder={roleInfo?.titlePlaceholder || ''}
+              />
+            </div>
+          )}
+
+          <div style={styles.signupActions}>
+            <button style={styles.perfCancelBtn} onClick={() => setStep('identity')}>Back</button>
+            <button
+              style={{ ...styles.loginSubmit, flex: 1, opacity: staffRole ? 1 : 0.4 }}
+              disabled={!staffRole}
+              onClick={() => setStep('welcome')}
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (step === 'sport') {
+    return (
+      <div style={styles.loginFrame}>
+        <div style={styles.loginInner}>
+          <div style={styles.signupStep}>Step 3 of 4</div>
+          <h1 style={styles.signupTitle}>What do you train for?</h1>
+          <p style={styles.signupIntro}>
+            We'll set up sensible defaults based on your sport. You can always change this later.
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {sports.map(s => (
+              <button
+                key={s.k}
+                onClick={() => setSport(s.k)}
+                style={{
+                  ...styles.signupSportBtn,
+                  ...(sport === s.k ? styles.signupSportBtnActive : {})
+                }}
+              >
+                <span style={styles.signupSportIcon}>{s.icon}</span>
+                <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+                  <div style={styles.signupSportLabel}>{s.l}</div>
+                  <div style={styles.signupSportDesc}>{s.desc}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          <div style={styles.signupActions}>
+            <button style={styles.perfCancelBtn} onClick={() => setStep('identity')}>Back</button>
+            <button
+              style={{ ...styles.loginSubmit, flex: 1, opacity: sport ? 1 : 0.4 }}
+              disabled={!sport}
+              onClick={() => setStep('welcome')}
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ===== STEP: WELCOME =====
+  if (step === 'welcome') {
+    const sportInfo = sports.find(s => s.k === sport);
+    const roleInfo = staffRoles.find(r => r.k === staffRole);
+    const isStaff = accountType === 'staff';
+
+    return (
+      <div style={styles.loginFrame}>
+        <div style={styles.loginInner}>
+          <div style={styles.signupStep}>Step 4 of 4</div>
+          <h1 style={styles.signupTitle}>You're all set, {name.split(' ')[0]}</h1>
+
+          <div style={styles.signupSummaryCard}>
+            <div style={styles.signupSummaryRow}>
+              <span style={styles.signupSummaryLabel}>Account</span>
+              <span style={styles.signupSummaryValue}>{email}</span>
+            </div>
+            <div style={styles.signupSummaryRow}>
+              <span style={styles.signupSummaryLabel}>{isStaff ? 'Role' : 'Training focus'}</span>
+              <span style={styles.signupSummaryValue}>
+                {isStaff ? (staffTitle.trim() || roleInfo?.l) : sportInfo?.l}
+              </span>
+            </div>
+            <div style={styles.signupSummaryRow}>
+              <span style={styles.signupSummaryLabel}>Affiliation</span>
+              <span style={styles.signupSummaryValue}>
+                {isStaff ? 'Independent practitioner' : 'Independent athlete'}
+              </span>
+            </div>
+          </div>
+
+          <div style={styles.signupNextCard}>
+            <div style={styles.signupNextLabel}>What's next</div>
+            <ul style={styles.signupNextList}>
+              {isStaff ? (
+                <>
+                  <li>Invite athletes to give you access to their training data</li>
+                  <li>Build your caseload across clubs, teams, or private clients</li>
+                  <li>Add notes, log injuries, track tests — depending on your role</li>
+                </>
+              ) : (
+                <>
+                  <li>Log your first workout and rate it</li>
+                  <li>Complete a quick wellness check-in</li>
+                  <li>Invite a clinician, coach, or anyone helping you train</li>
+                </>
+              )}
+            </ul>
+            <p style={styles.signupNextNote}>
+              {isStaff
+                ? 'Athletes control their own data — they choose what to share with you.'
+                : "You're in full control. You decide who sees what, and you can revoke access any time."}
+            </p>
+          </div>
+
+          <div style={styles.signupActions}>
+            <button
+              style={styles.perfCancelBtn}
+              onClick={() => setStep(isStaff ? 'role' : 'sport')}
+            >
+              Back
+            </button>
+            <button
+              style={{ ...styles.loginSubmit, flex: 1 }}
+              onClick={handleFinish}
+            >
+              {isStaff ? 'Open caseload' : 'Start training'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+
 function LoginScreen({ onLogin }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showDemoPicker, setShowDemoPicker] = useState(false);
+  const [showSignup, setShowSignup] = useState(false);
   const [error, setError] = useState(null);
   const [users, setUsers] = useState([]);
 
@@ -7318,12 +10864,44 @@ function LoginScreen({ onLogin }) {
     if (!password) { setError('Enter your password.'); return; }
     const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
     if (!user) {
-      setError("We can't find an account with that email. Use the demo picker to try a seeded account.");
+      setError("We can't find an account with that email. Use the demo picker or create an account.");
       return;
     }
     // Demo: any password works
     onLogin(user);
   };
+
+  const handleSignupComplete = (newUser, newAthlete) => {
+    // Mutate seed in-memory so this user can immediately interact with the rest of the app
+    const seed = getSeedData();
+    seed.teamUsers.push(newUser);
+    // Athlete signups also create an athlete record + self-link.
+    // Staff signups create only the user — they start with an empty caseload.
+    if (newAthlete) {
+      seed.teamAthletes.push(newAthlete);
+      seed.teamAthleteLinks.push({
+        id: `lnk_self_${newAthlete.id}`,
+        athleteId: newAthlete.id,
+        userId: newUser.id,
+        role: 'self',
+        status: 'active',
+        permissions: { ...(seed.PERM_TEMPLATES?.self || {}) },
+        acceptedAt: new Date().toISOString().slice(0, 10),
+        revokedAt: null
+      });
+    }
+    setShowSignup(false);
+    onLogin(newUser);
+  };
+
+  if (showSignup) {
+    return (
+      <SignupFlow
+        onComplete={handleSignupComplete}
+        onCancel={() => setShowSignup(false)}
+      />
+    );
+  }
 
   if (showDemoPicker) {
     return (
@@ -7374,15 +10952,20 @@ function LoginScreen({ onLogin }) {
           </button>
 
           <div style={styles.loginLinks}>
-            <a style={styles.loginLink}>Forgot password</a>
-            <span style={styles.loginLinkDivider}>·</span>
-            <a style={styles.loginLink}>Create account</a>
+            <a style={styles.loginLink} onClick={() => setShowSignup(true)}>Don't have an account? Create one</a>
           </div>
         </form>
 
         <div style={styles.loginDivider}>
           <span style={styles.loginDividerText}>OR</span>
         </div>
+
+        <button
+          style={styles.loginSignupBtn}
+          onClick={() => setShowSignup(true)}
+        >
+          Create an account
+        </button>
 
         <button
           style={styles.loginDemoBtn}
@@ -7467,7 +11050,12 @@ function IdentitySwitcher({ currentUserId, onPick, onClose, asLoginPicker }) {
                 {u.avatar}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={styles.identityName}>{u.name}</div>
+                <div style={styles.identityName}>
+                  {u.name}
+                  {u.athleteId && (
+                    <span style={styles.dualIdentityChip}>+ athlete</span>
+                  )}
+                </div>
                 <div style={styles.identityMeta}>
                   {u.title} · {roleName(u.role)}
                 </div>
@@ -7493,12 +11081,19 @@ function IdentitySwitcher({ currentUserId, onPick, onClose, asLoginPicker }) {
                 {u.avatar}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={styles.identityName}>{u.name}</div>
+                <div style={styles.identityName}>
+                  {u.name}
+                  {u.independent && (
+                    <span style={styles.dualIdentityChip}>independent</span>
+                  )}
+                </div>
                 <div style={styles.identityMeta}>
-                  {athlete?.position} · Personal account
+                  {athlete?.position} · {u.independent ? 'No club affiliation' : 'Personal account'}
                 </div>
                 <div style={styles.identityScope}>
-                  Sees only their own data
+                  {u.independent
+                    ? 'Sees only their own data · invites support staff individually'
+                    : 'Sees only their own data'}
                 </div>
               </div>
             </button>
@@ -7542,6 +11137,9 @@ const globalCSS = `
   }
   button { font-family: inherit; }
   button:active { transform: scale(0.99); }
+  /* Hide scrollbar on horizontally-scrolling tab bars */
+  .tempo-scroll-x::-webkit-scrollbar { display: none; }
+  .tempo-scroll-x { -ms-overflow-style: none; scrollbar-width: none; }
   @keyframes fadein { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
   @keyframes sheetin { from { transform: translateY(40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 `;
@@ -7651,10 +11249,159 @@ const styles = {
     textTransform: 'uppercase', cursor: 'pointer',
     fontFamily: 'inherit'
   },
+  loginSignupBtn: {
+    width: '100%', padding: '14px',
+    background: '#fdfbf5', color: '#1a1a1a',
+    border: '1px solid #1a1a1a', borderRadius: 100,
+    fontSize: 13, fontWeight: 600, letterSpacing: '0.04em',
+    cursor: 'pointer', fontFamily: 'inherit',
+    marginBottom: 10
+  },
   loginFoot: {
     marginTop: 32, fontSize: 11,
     color: '#8a8275', letterSpacing: '0.1em',
     textTransform: 'uppercase'
+  },
+
+  // ===== SIGNUP =====
+  signupStep: {
+    fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase',
+    color: '#c8472b', fontWeight: 600, marginBottom: 12
+  },
+  signupTitle: {
+    fontFamily: '"Fraunces", Georgia, serif',
+    fontSize: 28, fontWeight: 400, color: '#1a1a1a',
+    letterSpacing: '-0.02em', lineHeight: 1.15,
+    margin: '0 0 12px 0'
+  },
+  signupIntro: {
+    fontSize: 14, color: '#5a564d', lineHeight: 1.5,
+    margin: '0 0 24px 0'
+  },
+  signupActions: {
+    display: 'flex', gap: 10, marginTop: 24
+  },
+  signupFinePrint: {
+    fontSize: 11, color: '#8a8275',
+    marginTop: 18, lineHeight: 1.5, fontStyle: 'italic',
+    textAlign: 'center'
+  },
+  signupSportBtn: {
+    display: 'flex', alignItems: 'center', gap: 14,
+    background: '#fdfbf5', border: '1px solid #e8e4dc',
+    borderRadius: 12, padding: '14px 16px',
+    cursor: 'pointer', fontFamily: 'inherit',
+    transition: 'all 0.15s ease', width: '100%'
+  },
+  signupSportBtnActive: {
+    borderColor: '#1a1a1a',
+    background: '#fdfbf5',
+    boxShadow: '0 0 0 1px #1a1a1a'
+  },
+  signupSportIcon: {
+    width: 36, height: 36, borderRadius: '50%',
+    background: '#efeadd', color: '#1a1a1a',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: 18, flexShrink: 0
+  },
+  signupSportLabel: {
+    fontFamily: '"Fraunces", Georgia, serif',
+    fontSize: 16, fontWeight: 500, color: '#1a1a1a',
+    letterSpacing: '-0.01em'
+  },
+  signupSportDesc: {
+    fontSize: 11, color: '#8a8275', marginTop: 2,
+    letterSpacing: '0.02em'
+  },
+  signupSummaryCard: {
+    background: '#fdfbf5', border: '1px solid #e8e4dc',
+    borderRadius: 12, padding: '14px 16px',
+    margin: '8px 0 14px 0'
+  },
+  signupSummaryRow: {
+    display: 'flex', justifyContent: 'space-between',
+    padding: '8px 0',
+    borderBottom: '1px solid #efeadd'
+  },
+  signupSummaryLabel: {
+    fontSize: 11, color: '#8a8275', letterSpacing: '0.04em'
+  },
+  signupSummaryValue: {
+    fontSize: 13, color: '#1a1a1a', fontWeight: 500,
+    textAlign: 'right', minWidth: 0,
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+    marginLeft: 12
+  },
+  signupNextCard: {
+    background: '#f5f1e8', borderRadius: 12,
+    padding: '14px 16px',
+    margin: '8px 0 14px 0'
+  },
+  signupNextLabel: {
+    fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase',
+    color: '#5a564d', fontWeight: 600, marginBottom: 8
+  },
+  signupNextList: {
+    margin: 0, padding: '0 0 0 18px',
+    fontSize: 13, color: '#1a1a1a', lineHeight: 1.7
+  },
+  signupNextNote: {
+    fontSize: 12, color: '#5a564d',
+    margin: '12px 0 0 0',
+    fontStyle: 'italic', lineHeight: 1.5
+  },
+
+  // ===== First-run athlete welcome =====
+  firstRunCard: {
+    background: '#fdfbf5', border: '1px solid #e8e4dc',
+    borderRadius: 14, padding: '18px',
+    marginBottom: 20,
+    display: 'flex', flexDirection: 'column', gap: 12
+  },
+  firstRunHead: {
+    display: 'flex', alignItems: 'center', gap: 12,
+    paddingBottom: 12,
+    borderBottom: '1px solid #efeadd'
+  },
+  firstRunIcon: {
+    width: 42, height: 42, borderRadius: '50%',
+    background: '#1a1a1a', color: '#f5f1e8',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: 20, flexShrink: 0
+  },
+  firstRunTitle: {
+    fontFamily: '"Fraunces", Georgia, serif',
+    fontSize: 18, fontWeight: 500, color: '#1a1a1a',
+    letterSpacing: '-0.01em', lineHeight: 1.2
+  },
+  firstRunSubtitle: {
+    fontSize: 11, color: '#8a8275', marginTop: 3,
+    letterSpacing: '0.02em'
+  },
+  firstRunStep: {
+    display: 'flex', alignItems: 'flex-start', gap: 12,
+    paddingTop: 4
+  },
+  firstRunStepNum: {
+    width: 24, height: 24, borderRadius: '50%',
+    background: '#efeadd', color: '#5a564d',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: 12, fontWeight: 600,
+    flexShrink: 0
+  },
+  firstRunStepTitle: {
+    fontSize: 13, color: '#1a1a1a', fontWeight: 500
+  },
+  firstRunStepDesc: {
+    fontSize: 11, color: '#8a8275', marginTop: 3,
+    lineHeight: 1.5
+  },
+  firstRunNote: {
+    margin: '8px 0 0 0',
+    padding: '10px 12px',
+    background: '#f5f1e8', borderRadius: 8,
+    fontSize: 11, color: '#5a564d',
+    fontStyle: 'italic', lineHeight: 1.5
   },
 
   // ===== IDENTITY PICKER =====
@@ -7690,7 +11437,18 @@ const styles = {
   identityName: {
     fontFamily: '"Fraunces", Georgia, serif',
     fontSize: 16, fontWeight: 500, color: '#1a1a1a',
-    letterSpacing: '-0.01em'
+    letterSpacing: '-0.01em', lineHeight: 1.35
+  },
+  dualIdentityChip: {
+    marginLeft: 8,
+    fontSize: 9, padding: '2px 8px', borderRadius: 100,
+    background: '#fdf5e9', color: '#a37b1a',
+    letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600,
+    border: '1px solid #efd9a8',
+    verticalAlign: 'middle',
+    fontFamily: 'Inter, system-ui, sans-serif',
+    whiteSpace: 'nowrap',
+    display: 'inline-block'
   },
   identityMeta: {
     fontSize: 11, color: '#8a8275', marginTop: 2,
@@ -7973,13 +11731,15 @@ const styles = {
     border: '1px solid #f0cbb8'
   },
   invitePermToggle: {
+    display: 'inline-block',
     width: 42, height: 24, borderRadius: 100,
     border: 'none', cursor: 'pointer', position: 'relative',
     padding: 0, transition: 'background 0.2s ease',
-    flexShrink: 0
+    flexShrink: 0,
+    verticalAlign: 'middle'
   },
   invitePermToggleKnob: {
-    position: 'absolute', top: 2,
+    position: 'absolute', top: 2, left: 0,
     width: 20, height: 20, borderRadius: '50%',
     background: '#fdfbf5',
     boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
@@ -7991,78 +11751,776 @@ const styles = {
     marginBottom: 10
   },
 
+  // ===== Bulk testing session =====
+  // ===== Test search field =====
+  testSearchWrap: {
+    position: 'relative',
+    marginBottom: 12
+  },
+  testSearchInput: {
+    width: '100%',
+    padding: '11px 36px 11px 14px',
+    background: '#fdfbf5',
+    border: '1px solid #e0d9c8',
+    borderRadius: 10,
+    fontSize: 13,
+    color: '#1a1a1a',
+    fontFamily: 'inherit',
+    boxSizing: 'border-box',
+    outline: 'none'
+  },
+  testSearchClear: {
+    position: 'absolute',
+    right: 8, top: '50%', transform: 'translateY(-50%)',
+    width: 26, height: 26, borderRadius: '50%',
+    background: '#efeadd', color: '#5a564d',
+    border: 'none', cursor: 'pointer',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    padding: 0
+  },
+  testSearchEmpty: {
+    padding: '20px 16px',
+    background: '#fdfbf5',
+    border: '1px dashed #e0d9c8',
+    borderRadius: 10,
+    fontSize: 12, color: '#5a564d', textAlign: 'center',
+    fontStyle: 'italic'
+  },
+
+  // ===== CSV upload =====
+  testUploadHeroCard: {
+    background: '#1a1a1a', color: '#f5f1e8',
+    borderRadius: 14, padding: '18px 18px 16px',
+    marginBottom: 12
+  },
+  testUploadHeroLabel: {
+    fontSize: 10, letterSpacing: '0.14em',
+    textTransform: 'uppercase', color: '#c8b894', fontWeight: 600,
+    marginBottom: 6
+  },
+  testUploadHeroTitle: {
+    fontFamily: '"Fraunces", Georgia, serif',
+    fontSize: 18, fontWeight: 500, color: '#f5f1e8',
+    letterSpacing: '-0.01em', marginBottom: 8
+  },
+  testUploadHeroBody: {
+    fontSize: 12, color: '#c8b894', lineHeight: 1.55,
+    margin: '0 0 14px 0'
+  },
+  testUploadHeroBtn: {
+    background: '#f5f1e8', color: '#1a1a1a',
+    border: 'none', borderRadius: 100,
+    padding: '11px 18px', fontSize: 13, fontWeight: 600,
+    letterSpacing: '0.04em', cursor: 'pointer', fontFamily: 'inherit',
+    width: '100%'
+  },
+  uploadFormatCard: {
+    background: '#fdfbf5', border: '1px solid #e8e4dc',
+    borderRadius: 12, padding: '14px 16px',
+    marginBottom: 12
+  },
+  uploadFormatHead: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    marginBottom: 12, gap: 12, flexWrap: 'wrap'
+  },
+  uploadFormatTitle: {
+    fontSize: 11, letterSpacing: '0.08em',
+    textTransform: 'uppercase', color: '#8a8275', fontWeight: 600,
+    marginBottom: 10
+  },
+  uploadFormatExample: {
+    background: '#1a1a1a', color: '#f5f1e8',
+    borderRadius: 8, padding: '10px 12px',
+    marginBottom: 12,
+    overflowX: 'auto',
+    fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+    fontSize: 11, lineHeight: 1.7
+  },
+  uploadFormatExampleHeader: {
+    color: '#c8b894', whiteSpace: 'nowrap'
+  },
+  uploadFormatExampleRow: {
+    whiteSpace: 'nowrap'
+  },
+  uploadFormatTips: {
+    display: 'flex', flexDirection: 'column', gap: 6
+  },
+  uploadFormatTip: {
+    fontSize: 12, color: '#5a564d', lineHeight: 1.5
+  },
+  uploadTemplateBtn: {
+    background: 'transparent', color: '#1a1a1a',
+    border: '1px solid #c8b894', borderRadius: 100,
+    padding: '6px 12px', fontSize: 11, fontWeight: 600,
+    letterSpacing: '0.04em', cursor: 'pointer', fontFamily: 'inherit',
+    whiteSpace: 'nowrap'
+  },
+  uploadFormatBody: {
+    display: 'flex', flexDirection: 'column', gap: 6
+  },
+  uploadFormatRow: {
+    display: 'flex', alignItems: 'baseline', gap: 8
+  },
+  uploadFormatCol: {
+    fontSize: 11, color: '#8a8275', minWidth: 90,
+    letterSpacing: '0.02em'
+  },
+  uploadFormatVal: {
+    fontSize: 12, color: '#1a1a1a',
+    fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+    lineHeight: 1.5
+  },
+  uploadInputCard: {
+    background: '#fdfbf5', border: '1px solid #e8e4dc',
+    borderRadius: 12, padding: '14px 16px',
+    marginBottom: 12
+  },
+  uploadInputHead: {
+    marginBottom: 10
+  },
+  uploadInputLabel: {
+    fontSize: 10, letterSpacing: '0.14em',
+    textTransform: 'uppercase', color: '#8a8275', fontWeight: 600
+  },
+  uploadInputDivider: {
+    fontSize: 11, color: '#8a8275',
+    margin: '4px 0 10px 0', fontStyle: 'italic'
+  },
+  uploadTextarea: {
+    width: '100%',
+    padding: '10px 12px',
+    background: '#f5f1e8', border: '1px solid #e0d9c8',
+    borderRadius: 8,
+    fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+    fontSize: 12, color: '#1a1a1a',
+    boxSizing: 'border-box', marginBottom: 12,
+    resize: 'vertical'
+  },
+  uploadParseBtn: {
+    background: 'transparent', color: '#1a1a1a',
+    border: '1px solid #1a1a1a', borderRadius: 100,
+    padding: '10px 18px', fontSize: 13, fontWeight: 600,
+    letterSpacing: '0.04em', cursor: 'pointer', fontFamily: 'inherit',
+    width: '100%'
+  },
+  uploadPreviewCard: {
+    background: '#fdfbf5', border: '1px solid #e8e4dc',
+    borderRadius: 12, padding: '14px 16px',
+    marginBottom: 12
+  },
+  uploadPreviewHead: {
+    paddingBottom: 12,
+    borderBottom: '1px solid #efeadd',
+    marginBottom: 12
+  },
+  uploadPreviewTitle: {
+    fontFamily: '"Fraunces", Georgia, serif',
+    fontSize: 15, fontWeight: 500, color: '#1a1a1a',
+    letterSpacing: '-0.01em'
+  },
+  uploadPreviewMeta: {
+    fontSize: 11, color: '#8a8275', marginTop: 3,
+    letterSpacing: '0.02em'
+  },
+  uploadPreviewEmpty: {
+    fontSize: 12, color: '#5a564d',
+    textAlign: 'center', padding: '12px 0',
+    fontStyle: 'italic'
+  },
+  uploadPreviewList: {
+    display: 'flex', flexDirection: 'column', gap: 6,
+    maxHeight: 320, overflowY: 'auto'
+  },
+  testUploadRow: {
+    display: 'flex', gap: 12,
+    padding: '8px 10px',
+    background: '#f5f1e8', borderRadius: 6,
+    borderLeft: '3px solid #6e7e5a' // green-ish for valid
+  },
+  testUploadRowInvalid: {
+    borderLeft: '3px solid #b8693d',
+    background: '#fdf5e9'
+  },
+  testUploadRowNum: {
+    fontSize: 10, color: '#8a8275',
+    letterSpacing: '0.04em', textTransform: 'uppercase',
+    fontWeight: 600, flexShrink: 0,
+    width: 50
+  },
+  testUploadRowOk: {
+    flex: 1, minWidth: 0
+  },
+  testUploadRowName: {
+    fontSize: 12, color: '#1a1a1a', fontWeight: 500,
+    lineHeight: 1.4
+  },
+  testUploadRowVal: {
+    fontSize: 11, color: '#5a564d', marginTop: 2,
+    fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace'
+  },
+  testUploadRowErr: {
+    flex: 1, minWidth: 0
+  },
+  testUploadErrText: {
+    fontSize: 11, color: '#b8693d', lineHeight: 1.5
+  },
+
+  bulkTestHint: {
+    fontSize: 11, color: '#8a8275', fontStyle: 'italic',
+    lineHeight: 1.5, marginTop: 10, padding: '8px 10px',
+    background: '#f5f1e8', borderRadius: 6
+  },
+  bulkTestRow: {
+    display: 'flex', alignItems: 'center', gap: 12,
+    background: '#fdfbf5', border: '1px solid #e8e4dc',
+    borderRadius: 10, padding: '12px 14px'
+  },
+  bulkTestAvatar: {
+    width: 32, height: 32, borderRadius: '50%',
+    background: '#efeadd', color: '#5a564d',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontFamily: '"Fraunces", Georgia, serif',
+    fontSize: 12, fontWeight: 500, flexShrink: 0
+  },
+  bulkTestNameCol: {
+    flex: 1, minWidth: 0
+  },
+  bulkTestName: {
+    fontSize: 13, color: '#1a1a1a', fontWeight: 500
+  },
+  bulkTestMeta: {
+    fontSize: 10, color: '#8a8275', marginTop: 2,
+    letterSpacing: '0.02em'
+  },
+  bulkTestInputCol: {
+    display: 'flex', flexDirection: 'column',
+    alignItems: 'flex-end', gap: 2,
+    flexShrink: 0
+  },
+  bulkTestInput: {
+    width: 80, padding: '8px 10px',
+    background: '#fdfbf5', border: '1px solid #c8b894',
+    borderRadius: 6,
+    fontSize: 14, color: '#1a1a1a', textAlign: 'right',
+    fontFamily: 'inherit', boxSizing: 'border-box'
+  },
+  bulkTestInputSmall: {
+    width: 56, padding: '8px 8px',
+    background: '#fdfbf5', border: '1px solid #c8b894',
+    borderRadius: 6,
+    fontSize: 14, color: '#1a1a1a', textAlign: 'right',
+    fontFamily: 'inherit', boxSizing: 'border-box'
+  },
+  bulkTestBilateralRow: {
+    display: 'flex', gap: 4
+  },
+  bulkTestUnit: {
+    fontSize: 9, color: '#8a8275',
+    letterSpacing: '0.06em', textTransform: 'uppercase'
+  },
+
+  // ===== Contacts view =====
+  contactsSearchBar: {
+    position: 'relative',
+    marginBottom: 12
+  },
+  contactsSearchInput: {
+    width: '100%', padding: '12px 36px 12px 14px',
+    background: '#fdfbf5', border: '1px solid #e0d9c8',
+    borderRadius: 100, fontSize: 14, color: '#1a1a1a',
+    fontFamily: 'inherit', boxSizing: 'border-box'
+  },
+  contactsSearchClear: {
+    position: 'absolute', right: 10, top: '50%',
+    transform: 'translateY(-50%)',
+    background: '#efeadd', border: 'none',
+    width: 22, height: 22, borderRadius: '50%',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    color: '#5a564d', cursor: 'pointer'
+  },
+  contactsHint: {
+    fontSize: 11, color: '#8a8275', fontStyle: 'italic',
+    marginBottom: 12, padding: '0 4px', lineHeight: 1.4
+  },
+  contactCard: {
+    background: '#fdfbf5', border: '1px solid #e8e4dc',
+    borderRadius: 12, overflow: 'hidden'
+  },
+  contactCardHead: {
+    width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+    padding: '12px 14px',
+    background: 'transparent', border: 'none',
+    cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left'
+  },
+  contactCardAvatar: {
+    width: 36, height: 36, borderRadius: '50%',
+    background: '#efeadd', color: '#5a564d',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontFamily: '"Fraunces", Georgia, serif',
+    fontSize: 13, fontWeight: 500, flexShrink: 0
+  },
+  contactCardName: {
+    fontFamily: '"Fraunces", Georgia, serif',
+    fontSize: 16, fontWeight: 500, color: '#1a1a1a',
+    letterSpacing: '-0.01em'
+  },
+  contactCardMeta: {
+    fontSize: 11, color: '#8a8275', marginTop: 2,
+    letterSpacing: '0.02em'
+  },
+  contactCardBody: {
+    padding: '0 14px 14px',
+    borderTop: '1px solid #efeadd',
+    display: 'flex', flexDirection: 'column', gap: 12
+  },
+  contactSection: {
+    paddingTop: 12
+  },
+  contactSectionLabel: {
+    fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase',
+    color: '#5a564d', fontWeight: 600, marginBottom: 6
+  },
+  contactSectionMedical: {
+    background: '#fdf5f0', border: '1px solid #f0cbb8',
+    borderRadius: 8, padding: '10px 12px', marginTop: 12
+  },
+  contactSectionLabelMedical: {
+    fontSize: 9, letterSpacing: '0.12em', textTransform: 'uppercase',
+    color: '#9c3a23', fontWeight: 600, marginBottom: 6
+  },
+  contactRow: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+    padding: '8px 0',
+    color: '#1a1a1a', textDecoration: 'none',
+    borderBottom: '1px solid rgba(232,228,220,0.6)'
+  },
+  contactRowLabel: {
+    fontSize: 11, color: '#8a8275', letterSpacing: '0.04em',
+    flexShrink: 0
+  },
+  contactRowValue: {
+    fontSize: 13, color: '#1a1a1a', fontWeight: 500,
+    textAlign: 'right', minWidth: 0,
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+    marginLeft: 12
+  },
+  contactNotShared: {
+    padding: '14px 0', fontSize: 12, color: '#8a8275',
+    fontStyle: 'italic', textAlign: 'center'
+  },
+  contactNote: {
+    display: 'flex', alignItems: 'flex-start', gap: 8,
+    padding: '10px 12px',
+    background: '#f5f1e8', borderRadius: 8,
+    fontSize: 12, color: '#5a564d', lineHeight: 1.5,
+    fontStyle: 'italic'
+  },
+  contactNoteIcon: {
+    fontSize: 14, color: '#c8b894', flexShrink: 0, lineHeight: 1
+  },
+  contactProfileBtn: {
+    background: 'transparent', color: '#1a1a1a',
+    border: '1px solid #c8b894', borderRadius: 100,
+    padding: '8px 14px', fontSize: 11, fontWeight: 600,
+    letterSpacing: '0.06em', textTransform: 'uppercase',
+    cursor: 'pointer', fontFamily: 'inherit',
+    width: '100%', marginTop: 4
+  },
+  contactsFooter: {
+    fontSize: 11, color: '#8a8275', fontStyle: 'italic',
+    textAlign: 'center', marginTop: 18, letterSpacing: '0.02em'
+  },
+  contactsSectionWrap: {
+    marginBottom: 18
+  },
+  contactsSectionHead: {
+    width: '100%',
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    background: 'transparent', border: 'none',
+    padding: '10px 4px',
+    cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+    borderBottom: '1px solid #e0d9c8'
+  },
+  contactsSectionLabel: {
+    fontFamily: '"Fraunces", Georgia, serif',
+    fontSize: 18, fontWeight: 500, color: '#1a1a1a',
+    letterSpacing: '-0.01em'
+  },
+  contactsSectionMeta: {
+    fontSize: 11, color: '#8a8275', marginTop: 2,
+    letterSpacing: '0.02em'
+  },
+  contactSectionLabelInner: {
+    fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase',
+    color: '#5a564d', fontWeight: 600, marginBottom: 6
+  },
+
+  // ===== Contact sharing panel (athlete-side) =====
+  contactShareCard: {
+    background: '#fdfbf5', border: '1px solid #e8e4dc',
+    borderRadius: 14, padding: '14px 16px'
+  },
+  contactShareIntro: {
+    fontSize: 11, color: '#8a8275', lineHeight: 1.4,
+    margin: '0 0 12px 0', fontStyle: 'italic'
+  },
+  contactShareRow: {
+    display: 'flex', alignItems: 'center', gap: 12,
+    padding: '12px 0',
+    borderTop: '1px solid #efeadd'
+  },
+  contactShareRowLabel: {
+    fontSize: 12, color: '#1a1a1a', fontWeight: 500,
+    display: 'flex', alignItems: 'center', gap: 8,
+    flexWrap: 'wrap'
+  },
+  contactShareValue: {
+    background: 'transparent', border: 'none',
+    padding: '4px 0', marginTop: 2,
+    fontSize: 13, color: '#5a564d',
+    cursor: 'pointer', fontFamily: 'inherit',
+    textAlign: 'left'
+  },
+  contactShareSub: {
+    fontSize: 11, color: '#8a8275', marginTop: 2,
+    letterSpacing: '0.02em'
+  },
+  contactShareTag: {
+    fontSize: 9, padding: '2px 6px', borderRadius: 100,
+    background: '#fdf5f0', color: '#9c3a23',
+    letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600,
+    border: '1px solid #f0cbb8'
+  },
+
+  // ===== Staff identity card on Privacy & sharing =====
+  staffIdentityCard: {
+    display: 'flex', alignItems: 'center', gap: 14,
+    background: '#fdfbf5', border: '1px solid #e8e4dc',
+    borderRadius: 14, padding: '14px 16px',
+    marginBottom: 18
+  },
+
   // ===== INTRO SCREEN =====
   introFrame: {
-    maxWidth: 420,
+    maxWidth: 480,
     margin: '0 auto',
     background: '#f5f1e8',
-    minHeight: '90vh',
-    borderRadius: 28,
-    padding: '60px 32px 40px',
-    boxShadow: '0 1px 0 rgba(0,0,0,0.04), 0 12px 40px -12px rgba(0,0,0,0.18)',
-    border: '1px solid #e8e4dc',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    minHeight: '100vh',
+    padding: '40px 24px 40px',
     animation: 'fadein 0.4s ease'
   },
   introInner: {
-    textAlign: 'center',
+    textAlign: 'left',
     width: '100%'
   },
+  introBrandRow: {
+    display: 'flex',
+    alignItems: 'baseline',
+    gap: 10,
+    marginBottom: 36
+  },
   introMark: {
-    fontSize: 56,
+    fontSize: 28,
     color: '#1a1a1a',
-    marginBottom: 12,
     lineHeight: 1
   },
   introBrand: {
     fontFamily: '"Fraunces", Georgia, serif',
-    fontSize: 38,
-    fontWeight: 400,
+    fontSize: 22,
+    fontWeight: 500,
     letterSpacing: '-0.02em',
+    color: '#1a1a1a'
+  },
+  introHeadline: {
+    fontFamily: '"Fraunces", Georgia, serif',
+    fontSize: 30,
+    fontWeight: 400,
     color: '#1a1a1a',
+    letterSpacing: '-0.025em',
+    lineHeight: 1.2,
+    margin: '0 0 16px 0'
+  },
+  introSubhead: {
+    fontSize: 15,
+    lineHeight: 1.55,
+    color: '#5a564d',
+    margin: '0 0 28px 0'
+  },
+  introWhoCard: {
+    background: '#fdfbf5',
+    border: '1px solid #e8e4dc',
+    borderRadius: 14,
+    padding: '16px 18px',
+    marginBottom: 18
+  },
+  introWhoLabel: {
+    fontSize: 10,
+    letterSpacing: '0.14em',
+    textTransform: 'uppercase',
+    color: '#8a8275',
+    fontWeight: 600,
     marginBottom: 12
   },
-  introTagline: {
-    fontFamily: '"Fraunces", Georgia, serif',
-    fontSize: 17,
-    fontStyle: 'italic',
-    color: '#5a564d',
-    marginBottom: 40,
-    letterSpacing: '-0.01em'
+  introWhoList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10
   },
-  introBody: {
-    marginBottom: 40,
-    paddingTop: 20,
-    borderTop: '1px solid #e0d9c8'
+  introWhoItem: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 12
   },
-  introPara: {
-    fontSize: 14,
-    lineHeight: 1.6,
+  introWhoIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: '50%',
+    background: '#efeadd',
+    color: '#1a1a1a',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: 13,
+    flexShrink: 0,
+    marginTop: 1
+  },
+  introWhoText: {
+    fontSize: 13,
+    color: '#1a1a1a',
+    lineHeight: 1.5
+  },
+  introDemoBox: {
+    background: '#fdf5e9',
+    border: '1px solid #efd9a8',
+    borderRadius: 12,
+    padding: '12px 14px',
+    marginBottom: 24
+  },
+  introDemoLabel: {
+    fontSize: 10,
+    letterSpacing: '0.14em',
+    textTransform: 'uppercase',
+    color: '#a37b1a',
+    fontWeight: 600,
+    marginBottom: 6
+  },
+  introDemoText: {
+    fontSize: 12,
     color: '#5a564d',
-    margin: '0 0 14px',
-    textAlign: 'left'
+    lineHeight: 1.55,
+    margin: 0
   },
   introCta: {
     background: '#1a1a1a',
     color: '#f5f1e8',
     border: 'none',
     borderRadius: 100,
-    padding: '14px 48px',
+    padding: '16px 32px',
     fontSize: 14,
-    fontWeight: 500,
+    fontWeight: 600,
     letterSpacing: '0.06em',
     textTransform: 'uppercase',
     cursor: 'pointer',
-    fontFamily: 'inherit'
+    fontFamily: 'inherit',
+    width: '100%'
   },
   introFoot: {
-    marginTop: 40,
+    marginTop: 22,
     fontSize: 11,
     color: '#8a8275',
-    letterSpacing: '0.1em',
-    textTransform: 'uppercase'
+    letterSpacing: '0.08em',
+    textAlign: 'center'
+  },
+
+  // ===== Feedback widget =====
+  feedbackFloater: {
+    position: 'fixed',
+    bottom: 20,
+    right: 20,
+    background: '#1a1a1a',
+    color: '#f5f1e8',
+    border: '1px solid #1a1a1a',
+    borderRadius: 100,
+    padding: '11px 18px',
+    fontSize: 12,
+    fontWeight: 600,
+    letterSpacing: '0.06em',
+    textTransform: 'uppercase',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    boxShadow: '0 4px 16px -2px rgba(0,0,0,0.25), 0 2px 4px -1px rgba(0,0,0,0.12)',
+    zIndex: 50,
+    transition: 'transform 0.15s ease'
+  },
+  feedbackFloaterText: {
+    display: 'inline-block'
+  },
+  feedbackBackdrop: {
+    position: 'fixed',
+    inset: 0,
+    zIndex: 220,
+    background: 'rgba(20, 18, 14, 0.4)',
+    display: 'flex',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    padding: 16,
+    animation: 'fadein 0.18s ease'
+  },
+  feedbackSheet: {
+    width: '100%',
+    maxWidth: 460,
+    background: '#fdfbf5',
+    borderRadius: 20,
+    boxShadow: '0 -8px 40px -8px rgba(0,0,0,0.32), 0 -2px 8px -2px rgba(0,0,0,0.14)',
+    border: '1px solid #e8e4dc',
+    padding: '14px 0 8px',
+    animation: 'sheetin 0.25s cubic-bezier(.22,.91,.34,1)'
+  },
+  feedbackBody: {
+    padding: '4px 20px 20px'
+  },
+  feedbackHead: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 14,
+    paddingBottom: 16
+  },
+  feedbackTitle: {
+    fontFamily: '"Fraunces", Georgia, serif',
+    fontSize: 18,
+    fontWeight: 500,
+    color: '#1a1a1a',
+    letterSpacing: '-0.01em',
+    lineHeight: 1.2
+  },
+  feedbackSubtitle: {
+    fontSize: 12,
+    color: '#5a564d',
+    marginTop: 4,
+    lineHeight: 1.5
+  },
+  feedbackCatLabel: {
+    fontSize: 10,
+    letterSpacing: '0.14em',
+    textTransform: 'uppercase',
+    color: '#5a564d',
+    fontWeight: 600,
+    marginBottom: 8,
+    marginTop: 4
+  },
+  feedbackCatGrid: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 6,
+    marginBottom: 18
+  },
+  feedbackCatBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    background: '#fdfbf5',
+    border: '1px solid #e8e4dc',
+    borderRadius: 10,
+    padding: '10px 12px',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    textAlign: 'left',
+    width: '100%',
+    transition: 'border-color 0.15s ease'
+  },
+  feedbackCatBtnActive: {
+    borderColor: '#1a1a1a',
+    background: '#fdfbf5'
+  },
+  feedbackCatEmoji: {
+    width: 24,
+    height: 24,
+    borderRadius: '50%',
+    background: '#efeadd',
+    color: '#1a1a1a',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: 13,
+    flexShrink: 0
+  },
+  feedbackCatLabelInner: {
+    fontSize: 13,
+    color: '#1a1a1a'
+  },
+  feedbackTextarea: {
+    width: '100%',
+    padding: '12px 14px',
+    background: '#fdfbf5',
+    border: '1px solid #e0d9c8',
+    borderRadius: 10,
+    fontSize: 13,
+    color: '#1a1a1a',
+    fontFamily: 'inherit',
+    lineHeight: 1.5,
+    resize: 'vertical',
+    boxSizing: 'border-box',
+    marginBottom: 14
+  },
+  feedbackSendBtn: {
+    width: '100%',
+    background: '#1a1a1a',
+    color: '#f5f1e8',
+    border: 'none',
+    borderRadius: 100,
+    padding: '13px 28px',
+    fontSize: 13,
+    fontWeight: 600,
+    letterSpacing: '0.06em',
+    cursor: 'pointer',
+    fontFamily: 'inherit'
+  },
+  feedbackNote: {
+    fontSize: 11,
+    color: '#8a8275',
+    margin: '10px 0 0 0',
+    fontStyle: 'italic',
+    textAlign: 'center'
+  },
+  feedbackSent: {
+    padding: '32px 20px 36px',
+    textAlign: 'center'
+  },
+  feedbackSentIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: '50%',
+    background: '#1a1a1a',
+    color: '#f5f1e8',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: 24,
+    margin: '0 auto 16px'
+  },
+  feedbackSentTitle: {
+    fontFamily: '"Fraunces", Georgia, serif',
+    fontSize: 22,
+    fontWeight: 500,
+    color: '#1a1a1a',
+    letterSpacing: '-0.01em',
+    marginBottom: 8
+  },
+  feedbackSentText: {
+    fontSize: 13,
+    color: '#5a564d',
+    lineHeight: 1.5
+  },
+  feedbackEmailChip: {
+    display: 'inline-block',
+    marginTop: 12,
+    padding: '8px 14px',
+    background: '#1a1a1a',
+    color: '#f5f1e8',
+    borderRadius: 100,
+    fontSize: 13,
+    fontWeight: 500,
+    userSelect: 'all'
   },
 
   // ===== ATHLETE SWITCHER MODAL =====
@@ -8226,6 +12684,61 @@ const styles = {
     padding: '6px 12px',
     cursor: 'pointer',
     fontFamily: 'inherit'
+  },
+
+  // ===== Dual-mode switcher (for users with both athlete + staff identity) =====
+  dualModeSwitcher: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: 8,
+    marginBottom: 18,
+    background: '#efeadd',
+    borderRadius: 14,
+    padding: 4
+  },
+  dualModeBtn: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    background: 'transparent', border: 'none',
+    padding: '10px 10px', borderRadius: 10,
+    cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+    color: '#5a564d',
+    transition: 'all 0.15s ease',
+    minWidth: 0
+  },
+  dualModeBtnActive: {
+    background: '#fdfbf5',
+    color: '#1a1a1a',
+    boxShadow: '0 1px 2px rgba(0,0,0,0.06), 0 1px 0 rgba(255,255,255,0.5) inset'
+  },
+  dualModeBtnIcon: {
+    fontSize: 18, lineHeight: 1, flexShrink: 0
+  },
+  dualModeBtnLabel: {
+    fontSize: 12, fontWeight: 600, letterSpacing: '0.04em',
+    lineHeight: 1.2
+  },
+  dualModeBtnSub: {
+    fontSize: 10, color: '#8a8275', marginTop: 2,
+    letterSpacing: '0.02em',
+    lineHeight: 1.35,
+    wordBreak: 'break-word'
+  },
+
+  // ===== Roster group headers (for multi-club staff) =====
+  rosterGroupHead: {
+    display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
+    marginTop: 18, marginBottom: 10,
+    paddingBottom: 6,
+    borderBottom: '1px solid #e0d9c8'
+  },
+  rosterGroupLabel: {
+    fontFamily: '"Fraunces", Georgia, serif',
+    fontSize: 16, fontWeight: 500, color: '#1a1a1a',
+    letterSpacing: '-0.01em'
+  },
+  rosterGroupCount: {
+    fontSize: 10, color: '#8a8275',
+    letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600
   },
 
   // ===== ATHLETE APP =====
@@ -8405,7 +12918,7 @@ const styles = {
     flexShrink: 0
   },
   aToggleKnob: {
-    position: 'absolute', top: 2,
+    position: 'absolute', top: 2, left: 0,
     width: 20, height: 20, borderRadius: '50%',
     background: '#fdfbf5',
     boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
@@ -8544,11 +13057,224 @@ const styles = {
   wFieldEnds: { display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: 10, color: '#b8b1a0', letterSpacing: '0.04em', textTransform: 'uppercase' },
 
   histRow: { display: 'flex', gap: 14, padding: '14px 0', borderBottom: '1px solid #e8e4dc' },
+  histRowTap: { cursor: 'pointer', borderRadius: 8, margin: '0 -8px', padding: '14px 8px' },
   histDate: { width: 78, fontSize: 11, color: '#8a8275', letterSpacing: '0.04em', textTransform: 'uppercase', paddingTop: 2 },
   histBody: { flex: 1 },
   histTitle: { fontSize: 14, fontWeight: 500 },
   histLoad: { fontFamily: '"Fraunces", Georgia, serif', fontSize: 15 },
   histMeta: { fontSize: 12, color: '#8a8275', marginTop: 2 },
+  histTapHint: {
+    fontSize: 10, color: '#b8b1a0', marginTop: 6,
+    letterSpacing: '0.06em', textTransform: 'uppercase'
+  },
+  histEditedTag: {
+    marginTop: 4, fontSize: 9, color: '#a37b1a',
+    letterSpacing: '0.06em', textTransform: 'uppercase',
+    fontWeight: 600
+  },
+  histAddPastBtn: {
+    width: '100%',
+    background: 'transparent', color: '#1a1a1a',
+    border: '1px dashed #c8b894', borderRadius: 12,
+    padding: '14px 16px',
+    fontSize: 13, fontWeight: 500,
+    cursor: 'pointer', fontFamily: 'inherit',
+    marginBottom: 18
+  },
+
+  // ===== Athlete-side injuries =====
+  aInjuriesIntro: {
+    fontSize: 12, color: '#5a564d',
+    lineHeight: 1.5, fontStyle: 'italic',
+    margin: '0 0 18px 0'
+  },
+  aInjuriesGroupHead: {
+    fontSize: 10, letterSpacing: '0.16em',
+    textTransform: 'uppercase', color: '#8a8275', fontWeight: 600,
+    marginBottom: 10
+  },
+  aInjCard: {
+    background: '#fdfbf5',
+    border: '1px solid #e8e4dc',
+    borderRadius: 12,
+    overflow: 'hidden'
+  },
+  aInjCardHead: {
+    display: 'flex', alignItems: 'flex-start',
+    padding: '14px 16px',
+    background: 'transparent', border: 'none',
+    width: '100%', textAlign: 'left',
+    cursor: 'pointer', fontFamily: 'inherit'
+  },
+  aInjCardTitle: {
+    fontFamily: '"Fraunces", Georgia, serif',
+    fontSize: 15, fontWeight: 500, color: '#1a1a1a',
+    letterSpacing: '-0.01em', lineHeight: 1.3
+  },
+  aInjCardMeta: {
+    fontSize: 11, color: '#8a8275', marginTop: 4,
+    letterSpacing: '0.02em',
+    display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap'
+  },
+  aInjSelfTag: {
+    fontSize: 9, padding: '2px 7px',
+    background: '#fdf5e9', color: '#a37b1a',
+    border: '1px solid #efd9a8', borderRadius: 100,
+    letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600
+  },
+  aInjCardBody: {
+    padding: '4px 16px 16px',
+    borderTop: '1px solid #efeadd'
+  },
+  aInjLabel: {
+    fontSize: 10, letterSpacing: '0.14em',
+    textTransform: 'uppercase', color: '#8a8275', fontWeight: 600,
+    marginBottom: 6
+  },
+  aInjValue: {
+    fontSize: 13, color: '#1a1a1a', lineHeight: 1.5
+  },
+  aInjSubMeta: {
+    fontSize: 11, color: '#8a8275', marginTop: 4,
+    fontStyle: 'italic'
+  },
+  aInjMilestones: {
+    background: '#f5f1e8', borderRadius: 8,
+    padding: '12px 12px',
+    margin: '14px 0 0 0'
+  },
+  aInjMilestonesNote: {
+    fontSize: 10, color: '#8a8275', marginTop: 8,
+    fontStyle: 'italic', lineHeight: 1.5,
+    textAlign: 'center'
+  },
+
+  // ===== Per-injury sharing =====
+  aInjSharing: {
+    marginTop: 18,
+    paddingTop: 14,
+    borderTop: '1px dashed #e0d9c8'
+  },
+  aInjSharingHead: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    background: 'transparent', border: 'none',
+    width: '100%', padding: 0,
+    cursor: 'pointer', fontFamily: 'inherit'
+  },
+  aInjSharingBody: {
+    marginTop: 12
+  },
+  aInjSharingHint: {
+    fontSize: 11, color: '#5a564d',
+    lineHeight: 1.5, marginBottom: 12,
+    fontStyle: 'italic'
+  },
+  aInjSharingRow: {
+    display: 'flex', alignItems: 'center', gap: 12,
+    padding: '10px 0',
+    borderBottom: '1px solid #efeadd'
+  },
+  aInjSharingName: {
+    fontSize: 13, color: '#1a1a1a', fontWeight: 500
+  },
+  aInjSharingRole: {
+    fontSize: 10, color: '#8a8275', marginTop: 2,
+    letterSpacing: '0.02em'
+  },
+  aInjSharingOverrideTag: {
+    fontStyle: 'italic', color: '#a37b1a'
+  },
+
+  // ===== Athlete injury report form =====
+  aInjFormIntro: {
+    fontSize: 13, color: '#5a564d',
+    lineHeight: 1.55,
+    padding: '12px 14px',
+    background: '#fdf5e9', border: '1px solid #efd9a8',
+    borderRadius: 8,
+    margin: '0 0 18px 0'
+  },
+  aInjRegionGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, 1fr)',
+    gap: 6,
+    marginBottom: 6
+  },
+  aInjRegionBtn: {
+    background: '#fdfbf5', color: '#1a1a1a',
+    border: '1px solid #e0d9c8', borderRadius: 10,
+    padding: '11px 12px', fontSize: 12,
+    cursor: 'pointer', fontFamily: 'inherit',
+    textAlign: 'left'
+  },
+  aInjRegionBtnActive: {
+    background: '#1a1a1a', color: '#f5f1e8',
+    borderColor: '#1a1a1a', fontWeight: 600
+  },
+  aInjSideRow: {
+    display: 'flex', gap: 6, flexWrap: 'wrap'
+  },
+  aInjSideBtn: {
+    flex: 1, minWidth: '20%',
+    background: '#fdfbf5', color: '#1a1a1a',
+    border: '1px solid #e0d9c8', borderRadius: 100,
+    padding: '10px 14px', fontSize: 12,
+    cursor: 'pointer', fontFamily: 'inherit',
+    whiteSpace: 'nowrap'
+  },
+  aInjSideBtnActive: {
+    background: '#1a1a1a', color: '#f5f1e8',
+    borderColor: '#1a1a1a', fontWeight: 600
+  },
+  aInjFormNote: {
+    fontSize: 11, color: '#5a564d',
+    fontStyle: 'italic', lineHeight: 1.5,
+    padding: '10px 12px',
+    background: '#f5f1e8', borderRadius: 8,
+    margin: '18px 0 14px 0'
+  },
+  pastSessionHint: {
+    fontSize: 12, color: '#a37b1a',
+    fontStyle: 'italic', lineHeight: 1.5,
+    padding: '8px 12px',
+    background: '#fdf5e9', borderRadius: 6,
+    margin: '8px 0 4px 0'
+  },
+  deleteConfirm: {
+    marginTop: 18,
+    padding: '14px 16px',
+    background: '#fdf5f0', border: '1px solid #f0cbb8',
+    borderRadius: 10
+  },
+  deleteConfirmText: {
+    fontSize: 13, color: '#9c3a23',
+    marginBottom: 12, lineHeight: 1.5
+  },
+  deleteConfirmActions: {
+    display: 'flex', gap: 8
+  },
+  deleteConfirmCancel: {
+    flex: 1,
+    background: 'transparent', color: '#1a1a1a',
+    border: '1px solid #c8b894', borderRadius: 100,
+    padding: '10px 16px', fontSize: 13, fontWeight: 500,
+    cursor: 'pointer', fontFamily: 'inherit'
+  },
+  deleteConfirmConfirm: {
+    flex: 1,
+    background: '#9c3a23', color: '#fdfbf5',
+    border: 'none', borderRadius: 100,
+    padding: '10px 16px', fontSize: 13, fontWeight: 600,
+    cursor: 'pointer', fontFamily: 'inherit'
+  },
+  dangerLinkBtn: {
+    background: 'transparent', color: '#9c3a23',
+    border: 'none', padding: '14px 8px',
+    fontSize: 12, fontWeight: 500,
+    cursor: 'pointer', fontFamily: 'inherit',
+    width: '100%', marginTop: 10,
+    textDecoration: 'underline'
+  },
 
   toast: {
     position: 'absolute', bottom: 28, left: '50%', transform: 'translateX(-50%)',
@@ -8611,15 +13337,20 @@ const styles = {
   kpiSub: { fontSize: 11, color: '#8a8275', marginTop: 4 },
 
   pFilters: {
-    display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14
+    display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14,
+    overflowX: 'auto', flexWrap: 'nowrap',
+    paddingBottom: 4,
+    WebkitOverflowScrolling: 'touch'
   },
   pFilterLabel: {
     fontSize: 10, letterSpacing: '0.16em', textTransform: 'uppercase',
-    color: '#8a8275', fontWeight: 600, marginRight: 6
+    color: '#8a8275', fontWeight: 600, marginRight: 6,
+    flexShrink: 0
   },
   pFilterBtn: {
     padding: '6px 12px', borderRadius: 6, background: 'transparent',
-    border: '1px solid #e0d9c8', cursor: 'pointer', fontSize: 12, color: '#5a564d'
+    border: '1px solid #e0d9c8', cursor: 'pointer', fontSize: 12, color: '#5a564d',
+    fontFamily: 'inherit', whiteSpace: 'nowrap', flexShrink: 0
   },
   pFilterBtnActive: { background: '#1a1a1a', color: '#f5f1e8', border: '1px solid #1a1a1a' },
 
@@ -8756,15 +13487,23 @@ const styles = {
   pViewTabs: {
     display: 'flex', gap: 6, marginBottom: 18,
     background: '#efeadd', borderRadius: 100, padding: 4,
-    width: 'fit-content'
+    maxWidth: '100%',
+    overflowX: 'auto',
+    overflowY: 'hidden',
+    flexWrap: 'nowrap',
+    scrollbarWidth: 'none',
+    msOverflowStyle: 'none',
+    WebkitOverflowScrolling: 'touch'
   },
   pViewTab: {
     background: 'transparent', border: 'none',
-    padding: '8px 18px', borderRadius: 100,
+    padding: '8px 16px', borderRadius: 100,
     fontSize: 12, fontWeight: 600, letterSpacing: '0.06em',
     textTransform: 'uppercase', color: '#5a564d',
     cursor: 'pointer', fontFamily: 'inherit',
-    transition: 'all 0.15s ease'
+    transition: 'all 0.15s ease',
+    flexShrink: 0,
+    whiteSpace: 'nowrap'
   },
   pViewTabActive: {
     background: '#1a1a1a', color: '#f5f1e8'
@@ -8783,6 +13522,25 @@ const styles = {
     border: 'none', borderRadius: 100, padding: '11px 18px',
     fontSize: 13, fontWeight: 600, letterSpacing: '0.04em',
     cursor: 'pointer', fontFamily: 'inherit', width: '100%'
+  },
+  testingActionRow: {
+    display: 'flex', gap: 8, marginBottom: 4
+  },
+  testingActionPrimary: {
+    flex: 2,
+    background: '#1a1a1a', color: '#f5f1e8',
+    border: 'none', borderRadius: 100, padding: '11px 14px',
+    fontSize: 13, fontWeight: 600, letterSpacing: '0.04em',
+    cursor: 'pointer', fontFamily: 'inherit',
+    whiteSpace: 'nowrap'
+  },
+  testingActionSecondary: {
+    flex: 1,
+    background: 'transparent', color: '#1a1a1a',
+    border: '1px solid #1a1a1a', borderRadius: 100, padding: '11px 14px',
+    fontSize: 13, fontWeight: 600, letterSpacing: '0.04em',
+    cursor: 'pointer', fontFamily: 'inherit',
+    whiteSpace: 'nowrap'
   },
   perfTeamActionBar: {
     marginBottom: 16,
@@ -8912,6 +13670,39 @@ const styles = {
   perfInjHead: {
     display: 'flex', alignItems: 'flex-start'
   },
+  // ===== Injury collaborative editing =====
+  injStatusEdit: {
+    background: '#fdfbf5',
+    border: '1px solid #e8e4dc',
+    borderRadius: 10,
+    padding: '12px 14px',
+    margin: '14px 0'
+  },
+  injStatusEditLabel: {
+    fontSize: 10, letterSpacing: '0.14em',
+    textTransform: 'uppercase', color: '#8a8275', fontWeight: 600,
+    marginBottom: 8
+  },
+  injStatusEditRow: {
+    display: 'flex', gap: 6
+  },
+  injStatusBtn: {
+    flex: 1,
+    background: 'transparent', color: '#5a564d',
+    border: '1px solid #e0d9c8', borderRadius: 100,
+    padding: '8px 12px', fontSize: 11, fontWeight: 500,
+    cursor: 'pointer', fontFamily: 'inherit',
+    whiteSpace: 'nowrap'
+  },
+  injStatusBtnActive: {
+    background: '#1a1a1a', color: '#f5f1e8', borderColor: '#1a1a1a',
+    fontWeight: 600
+  },
+  injStatusMeta: {
+    fontSize: 10, color: '#8a8275',
+    marginTop: 8, fontStyle: 'italic'
+  },
+
   perfInjGrid: {
     display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
     gap: 10
@@ -9682,13 +14473,29 @@ const styles = {
     fontWeight: 500, letterSpacing: '-0.01em'
   },
   pTabBar: {
-    display: 'flex', gap: 4, borderBottom: '1px solid #e0d9c8', marginBottom: 18
+    display: 'flex',
+    gap: 4,
+    borderBottom: '1px solid #e0d9c8',
+    marginBottom: 18,
+    overflowX: 'auto',
+    overflowY: 'hidden',
+    flexWrap: 'nowrap',
+    // Hide scrollbar across browsers
+    scrollbarWidth: 'none',
+    msOverflowStyle: 'none',
+    // Use scroll-snap so each tab snaps cleanly
+    scrollSnapType: 'x mandatory',
+    WebkitOverflowScrolling: 'touch'
   },
   pTab: {
-    padding: '10px 14px', background: 'transparent', border: 'none',
+    padding: '10px 14px',
+    background: 'transparent', border: 'none',
     borderBottom: '2px solid transparent', cursor: 'pointer',
     fontSize: 12, letterSpacing: '0.06em', textTransform: 'uppercase',
-    color: '#8a8275', fontWeight: 600, fontFamily: 'inherit'
+    color: '#8a8275', fontWeight: 600, fontFamily: 'inherit',
+    flexShrink: 0,
+    whiteSpace: 'nowrap',
+    scrollSnapAlign: 'start'
   },
   pTabActive: { color: '#1a1a1a', borderBottom: '2px solid #1a1a1a' },
 
