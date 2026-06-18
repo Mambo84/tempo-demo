@@ -191,6 +191,11 @@ const TEST_CATALOG = [
   { key: 'dexa_fm',   name: 'DEXA fat mass',        cat: 'Body comp',unit: 'kg',    better: 'lower',   brief: 'Total fat tissue. Track alongside lean mass changes.' },
   { key: 'bia_pct',   name: 'BIA body fat %',       cat: 'Body comp',unit: '%',     better: 'lower',   brief: 'Bioimpedance estimate. Less accurate than DEXA but quick.' },
   { key: 'waist',     name: 'Waist circumference',  cat: 'Body comp',unit: 'cm',    better: 'lower',   brief: 'Narrowest point between ribs and iliac crest.' },
+  // ----- Growth & maturity (for adolescents) -----
+  { key: 'sit_height',name: 'Sitting height',       cat: 'Body comp',unit: 'cm',    better: 'neutral', brief: 'Vertex to seat. Tracks trunk growth — combined with standing height gives leg length and feeds maturity offset.' },
+  { key: 'mat_offset',name: 'Maturity offset',      cat: 'Body comp',unit: 'yrs',   better: 'neutral', brief: 'Years from peak height velocity (PHV). Mirwald 2002 (updated Moore 2015). Calculate from age, height, sitting height, weight. -1 to +1 yrs = high-risk window for adolescent injury and growth-related load management.' },
+  { key: 'phv_age',   name: 'Age at PHV',           cat: 'Body comp',unit: 'yrs',   better: 'neutral', brief: 'Chronological age when peak height velocity was reached. Typically 13.5 (boys) / 11.5 (girls). Once known, helps timing of training stimuli.' },
+  { key: 'growth_rate',name: 'Standing height velocity', cat: 'Body comp', unit: 'cm/yr', better: 'neutral', brief: 'Change in standing height between measurements. >8 cm/yr in adolescents suggests entering PHV window — flag for load and injury monitoring.' },
 
   // ===== CLINICAL (physio / allied health) =====
   // ----- Calf / Achilles -----
@@ -706,7 +711,12 @@ const generateSeedData = () => {
     injuryStatus: injuryStatus[i],
     injuryNote: injuryNotes[i],
     profile: profileExtras[i],
-    contactSharing: contactSharingDefaults[i]
+    contactSharing: contactSharingDefaults[i],
+    // Wellness preferences — most on daily, one on three-per-week, one off entirely
+    // to demonstrate how the practitioner side handles each case.
+    wellnessSettings: i === 2 ? { frequency: 'off',           enabledFields: { fatigue: true, soreness: true, sleep: true, stress: true, mood: true, motivation: true } }
+                    : i === 5 ? { frequency: 'three_per_week',enabledFields: { fatigue: true, soreness: true, sleep: true, stress: false, mood: false, motivation: false } }
+                    :           { frequency: 'daily',         enabledFields: { fatigue: true, soreness: true, sleep: true, stress: true, mood: true, motivation: true } }
   }));
 
   // Independent / cross-club athletes — these don't belong to Marlborough FC.
@@ -905,7 +915,20 @@ const generateSeedData = () => {
       text: 'Load has climbed sharply this week — flag for review before Saturday selection.' },
     { id: 'n2', athleteId: 'ath_4', author: 'Dr. Patel', role: 'Physio', date: today(),
       type: 'Clinician', visibility: 'medical',
-      text: 'Reports tight left hamstring post-Wed session. Modified running on Thursday. Monitor.' }
+      text: 'Reports tight left hamstring post-Wed session. Modified running on Thursday. Monitor.' },
+    // Athlete-visible coordination notes — short, actionable, time-bound
+    { id: 'n3', athleteId: 'ath_1', author: 'Dr. Patel', role: 'Physio', date: today(),
+      type: 'Coordination', visibility: 'athlete',
+      text: 'Skip the conditioning block tonight — just gym session. Quick chat tomorrow morning.',
+      acknowledged: false },
+    { id: 'n4', athleteId: 'ath_2', author: 'A. Reeves', role: 'S&C Coach', date: today(),
+      type: 'Coordination', visibility: 'athlete',
+      text: 'Lighter gym week — keep loads at 70% of last week. Focus on movement quality.',
+      acknowledged: false },
+    { id: 'n5', athleteId: 'ath_4', author: 'M. Connolly', role: 'Head Coach', date: today(),
+      type: 'Coordination', visibility: 'athlete',
+      text: 'Modified training only this week. Talk to Dr. Patel before Saturday selection.',
+      acknowledged: false }
   ];
 
   // ===== Injury records (full) =====
@@ -1531,9 +1554,20 @@ function AthleteApp({ currentUser, demoAthleteId, auditLog, recordAudit, onSwitc
   const [checkins, setCheckins] = useState([]);
   const [files, setFiles] = useState([]);
   const [injuries, setInjuries] = useState([]);
+  const [coordinationNotes, setCoordinationNotes] = useState([]);
   const [editingInjury, setEditingInjury] = useState(null);
   const [links, setLinks] = useState([]);
   const [demoAthlete, setDemoAthlete] = useState(null);
+
+  // Wellness preferences — owned by the athlete. Default: daily, all enabled.
+  // High-level athletes have specifically asked for ability to reduce cadence or opt out.
+  const [wellnessSettings, setWellnessSettings] = useState({
+    frequency: 'daily', // daily | three_per_week | weekly | off
+    enabledFields: {
+      fatigue: true, soreness: true, sleep: true,
+      stress: true, mood: true, motivation: true
+    }
+  });
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
 
@@ -1546,13 +1580,24 @@ function AthleteApp({ currentUser, demoAthleteId, auditLog, recordAudit, onSwitc
       setCheckins(seed.teamWellness.filter(c => c.athleteId === demoAthleteId));
       setFiles((seed.teamFiles || []).filter(f => f.athleteId === demoAthleteId));
       setInjuries((seed.teamInjuries || []).filter(i => i.athleteId === demoAthleteId));
-      setDemoAthlete(seed.teamAthletes.find(a => a.id === demoAthleteId) || null);
+      setCoordinationNotes(
+        (seed.teamNotes || []).filter(n =>
+          n.athleteId === demoAthleteId && n.visibility === 'athlete'
+        )
+      );
+      const seedAthlete = seed.teamAthletes.find(a => a.id === demoAthleteId);
+      setDemoAthlete(seedAthlete || null);
+      // Pick up the athlete's seeded wellness preferences if present
+      if (seedAthlete?.wellnessSettings) {
+        setWellnessSettings(seedAthlete.wellnessSettings);
+      }
     } else {
       // Fresh start mode — empty arrays, in-memory only
       setWorkouts([]);
       setCheckins([]);
       setFiles([]);
       setInjuries([]);
+      setCoordinationNotes([]);
       setDemoAthlete(null);
     }
     setLoading(false);
@@ -1743,6 +1788,22 @@ function AthleteApp({ currentUser, demoAthleteId, auditLog, recordAudit, onSwitc
   const wellnessAvg = calc.wellnessAvg(checkins, 7, todayStr);
   const monotony = calc.monotony(workouts, todayStr);
 
+  // Wellness-due logic respects the athlete's frequency preference.
+  // - off:        never prompt
+  // - daily:      always due if not done today
+  // - three_per_week: due if no check-in in the past 2 days
+  // - weekly:     due if no check-in in the past 6 days
+  const wellnessDue = (() => {
+    if (wellnessSettings.frequency === 'off') return false;
+    if (todayCheckin) return false;
+    if (wellnessSettings.frequency === 'daily') return true;
+    const daysBack = wellnessSettings.frequency === 'three_per_week' ? 2 : 6;
+    const cutoff = new Date(todayStr);
+    cutoff.setDate(cutoff.getDate() - daysBack);
+    return !checkins.some(c => new Date(c.date) > cutoff);
+  })();
+  const wellnessOff = wellnessSettings.frequency === 'off';
+
   // Status interpretation — vague, athlete-friendly
   let loadStatus = { label: 'Stable', tone: 'neutral' };
   if (weekly.total === 0) loadStatus = { label: 'No load this week', tone: 'neutral' };
@@ -1751,12 +1812,12 @@ function AthleteApp({ currentUser, demoAthleteId, auditLog, recordAudit, onSwitc
 
   // Recommendation engine — single sentence
   const recommend = () => {
-    if (!todayWorkouts.length && !todayCheckin) return 'Open the day with a quick wellness check-in.';
+    if (!todayWorkouts.length && !todayCheckin && wellnessDue) return 'Open the day with a quick wellness check-in.';
     if (acwr && acwr > 1.5) return 'Your workload has increased quickly this week. Consider how you pace the next few sessions.';
     if (monotony && monotony > 2 && weekly.total > 200) return 'Your training week has had little variation. Mixing intensities may help.';
-    if (wellnessAvg && wellnessAvg > 4) return 'Recovery markers are trending down. Notice how you feel over the next few sessions.';
+    if (wellnessAvg && wellnessAvg > 4 && !wellnessOff) return 'Recovery markers are trending down. Notice how you feel over the next few sessions.';
     if (weekly.total > 0 && acwr && acwr < 0.7) return 'Workload is lighter than your recent baseline — a good week to build steadily.';
-    if (todayWorkouts.length && !todayCheckin) return 'A quick wellness check-in rounds out the day.';
+    if (todayWorkouts.length && !todayCheckin && wellnessDue) return 'A quick wellness check-in rounds out the day.';
     return 'Training load is stable. Stay consistent.';
   };
 
@@ -1857,11 +1918,17 @@ function AthleteApp({ currentUser, demoAthleteId, auditLog, recordAudit, onSwitc
             label={todayWorkouts.length ? `${todayWorkouts.length} session${todayWorkouts.length > 1 ? 's' : ''} logged` : 'Log a session'}
             onClick={() => setView('logWorkout')}
           />
-          <CheckRow
-            done={!!todayCheckin}
-            label={todayCheckin ? 'Wellness check-in done' : 'Wellness check-in'}
-            onClick={() => setView('wellness')}
-          />
+          {!wellnessOff && (
+            <CheckRow
+              done={!!todayCheckin || !wellnessDue}
+              label={
+                todayCheckin ? 'Wellness check-in done'
+                : !wellnessDue ? `Wellness — next check-in ${wellnessSettings.frequency === 'weekly' ? 'this week' : 'in a few days'}`
+                : 'Wellness check-in'
+              }
+              onClick={() => setView('wellness')}
+            />
+          )}
         </div>
 
         {/* Weekly load summary */}
@@ -1878,33 +1945,53 @@ function AthleteApp({ currentUser, demoAthleteId, auditLog, recordAudit, onSwitc
           </div>
         </div>
 
-        {/* Recovery */}
-        <div style={styles.aCard}>
-          <div style={styles.aCardHeader}>
-            <span style={styles.aCardLabel}>Recovery</span>
-            <span style={styles.aSub}>last 7 days</span>
+        {/* Recovery — hidden when wellness check-ins are off */}
+        {!wellnessOff && (
+          <div style={styles.aCard}>
+            <div style={styles.aCardHeader}>
+              <span style={styles.aCardLabel}>Recovery</span>
+              <span style={styles.aSub}>last 7 days</span>
+            </div>
+            {wellnessAvg !== null ? (
+              <>
+                <div style={styles.aBigNum}>
+                  {wellnessAvg < 2 ? 'Fresh' : wellnessAvg < 3.5 ? 'Settled' : wellnessAvg < 5 ? 'Strained' : 'Drained'}
+                </div>
+                <div style={styles.aSub2}>Based on {checkins.filter(c => {
+                  const cd = new Date(c.date), end = new Date(todayStr), cutoff = new Date(end);
+                  cutoff.setDate(end.getDate() - 6);
+                  return cd >= cutoff && cd <= end;
+                }).length} check-ins</div>
+              </>
+            ) : (
+              <div style={styles.aSub2}>No check-ins yet this week</div>
+            )}
           </div>
-          {wellnessAvg !== null ? (
-            <>
-              <div style={styles.aBigNum}>
-                {wellnessAvg < 2 ? 'Fresh' : wellnessAvg < 3.5 ? 'Settled' : wellnessAvg < 5 ? 'Strained' : 'Drained'}
-              </div>
-              <div style={styles.aSub2}>Based on {checkins.filter(c => {
-                const cd = new Date(c.date), end = new Date(todayStr), cutoff = new Date(end);
-                cutoff.setDate(end.getDate() - 6);
-                return cd >= cutoff && cd <= end;
-              }).length} check-ins</div>
-            </>
-          ) : (
-            <div style={styles.aSub2}>No check-ins yet this week</div>
-          )}
-        </div>
+        )}
 
         {/* The one recommendation */}
         <div style={styles.aRec}>
           <div style={styles.aRecLabel}>Today's note</div>
           <p style={styles.aRecText}>{recommend()}</p>
         </div>
+
+        {/* Coordination notes from staff — only shown when there are unarchived athlete-visible notes */}
+        {coordinationNotes.filter(n => !n.archived).length > 0 && (
+          <CoordinationNotesPanel
+            notes={coordinationNotes.filter(n => !n.archived)}
+            onAcknowledge={(id) => {
+              setCoordinationNotes(coordinationNotes.map(n =>
+                n.id === id ? { ...n, acknowledged: true, acknowledgedAt: new Date().toISOString() } : n
+              ));
+              showToast('Got it — staff notified');
+            }}
+            onArchive={(id) => {
+              setCoordinationNotes(coordinationNotes.map(n =>
+                n.id === id ? { ...n, archived: true } : n
+              ));
+            }}
+          />
+        )}
 
         {/* GPS / external load widget — only shows if there's data */}
         <GpsWidget workouts={workouts} />
@@ -1925,6 +2012,9 @@ function AthleteApp({ currentUser, demoAthleteId, auditLog, recordAudit, onSwitc
           <button style={styles.aHistoryLink} onClick={() => setView('privacy')}>
             Privacy & access →
           </button>
+          <button style={styles.aHistoryLink} onClick={() => setView('settings')}>
+            Settings →
+          </button>
         </div>
 
         <div style={{ height: 24 }} />
@@ -1939,7 +2029,14 @@ function AthleteApp({ currentUser, demoAthleteId, auditLog, recordAudit, onSwitc
 
   // ---- WELLNESS ----
   if (view === 'wellness') {
-    return <Wellness existing={todayCheckin} onBack={() => setView('home')} onSave={async (c) => { await saveCheckin(c); setView('home'); }} />;
+    return (
+      <Wellness
+        existing={todayCheckin}
+        enabledFields={wellnessSettings.enabledFields}
+        onBack={() => setView('home')}
+        onSave={async (c) => { await saveCheckin(c); setView('home'); }}
+      />
+    );
   }
 
   // ---- HISTORY ----
@@ -2052,6 +2149,27 @@ function AthleteApp({ currentUser, demoAthleteId, auditLog, recordAudit, onSwitc
         links={links}
         onCreateLink={createLink}
         onRevokeLink={revokeLink}
+        onBack={() => setView('home')}
+      />
+    );
+  }
+
+  // ---- SETTINGS ----
+  if (view === 'settings') {
+    return (
+      <AthleteSettings
+        settings={wellnessSettings}
+        onChange={(s) => {
+          setWellnessSettings(s);
+          // Mirror to seed so the practitioner side reflects the athlete's choice
+          if (demoAthleteId) {
+            const seed = getSeedData();
+            const idx = seed.teamAthletes.findIndex(a => a.id === demoAthleteId);
+            if (idx >= 0) seed.teamAthletes[idx].wellnessSettings = s;
+          }
+          showToast('Settings saved');
+        }}
+        linkedStaff={(links || []).filter(l => l.role !== 'self' && l.status === 'active')}
         onBack={() => setView('home')}
       />
     );
@@ -2220,8 +2338,8 @@ function LogWorkout({ existing, onBack, onSave, onDelete }) {
   );
 }
 
-function Wellness({ existing, onBack, onSave }) {
-  const fields = [
+function Wellness({ existing, enabledFields, onBack, onSave }) {
+  const allFields = [
     { key: 'fatigue', label: 'Fatigue', low: 'Fresh', high: 'Exhausted' },
     { key: 'soreness', label: 'Soreness', low: 'None', high: 'Severe' },
     { key: 'sleep', label: 'Sleep', low: 'Great', high: 'Poor' },
@@ -2229,6 +2347,10 @@ function Wellness({ existing, onBack, onSave }) {
     { key: 'mood', label: 'Mood', low: 'Good', high: 'Low' },
     { key: 'motivation', label: 'Motivation', low: 'High', high: 'Flat' }
   ];
+  // Respect athlete-controlled enabled fields. If no preference, show all.
+  const fields = enabledFields
+    ? allFields.filter(f => enabledFields[f.key] !== false)
+    : allFields;
 
   const [vals, setVals] = useState(() => {
     const base = {};
@@ -2343,6 +2465,214 @@ function History({ workouts, checkins, onBack, onEditWorkout, onAddPast }) {
 // ============================================================
 // AthleteFiles — athlete's own file area
 // ============================================================
+// ============================================================
+// AthleteSettings — athlete-controlled preferences
+// Currently scoped to wellness cadence and field selection.
+// Designed around real feedback: high-level athletes report
+// wellness-prompt fatigue and want control without losing the
+// app entirely. The model is "respectful defaults, honest tradeoffs."
+// ============================================================
+function AthleteSettings({ settings, onChange, linkedStaff, onBack }) {
+  const [draft, setDraft] = useState(settings);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  const fieldDefs = [
+    { key: 'fatigue', label: 'Fatigue' },
+    { key: 'soreness', label: 'Soreness' },
+    { key: 'sleep', label: 'Sleep' },
+    { key: 'stress', label: 'Stress' },
+    { key: 'mood', label: 'Mood' },
+    { key: 'motivation', label: 'Motivation' }
+  ];
+
+  const frequencies = [
+    { k: 'daily', l: 'Daily',          desc: 'Most picture for you and your staff. Best when you\'re training hard.' },
+    { k: 'three_per_week', l: '3× a week', desc: 'Lighter touch. Catches trends without daily input.' },
+    { k: 'weekly', l: 'Weekly',         desc: 'Minimum useful frequency. Good for general fitness.' },
+    { k: 'off',    l: 'Off',            desc: 'No check-ins. You\'ll still log workouts and use the rest of the app.' }
+  ];
+
+  const hasLinkedStaff = (linkedStaff || []).length > 0;
+
+  const enabledCount = Object.values(draft.enabledFields).filter(Boolean).length;
+
+  const updateFreq = (k) => {
+    const next = { ...draft, frequency: k };
+    setDraft(next);
+    onChange(next);
+  };
+
+  const toggleField = (k) => {
+    if (enabledCount === 1 && draft.enabledFields[k]) return; // keep at least one
+    const next = {
+      ...draft,
+      enabledFields: { ...draft.enabledFields, [k]: !draft.enabledFields[k] }
+    };
+    setDraft(next);
+    onChange(next);
+  };
+
+  return (
+    <div style={styles.athleteFrame}>
+      <SubHeader title="Settings" onBack={onBack} />
+      <div style={styles.subBody}>
+
+        <div style={styles.settingsGroupLabel}>Wellness check-ins</div>
+        <p style={styles.settingsGroupHint}>
+          How often you'd like to check in. This is your call — you can change it any time.
+        </p>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {frequencies.map(f => {
+            const active = draft.frequency === f.k;
+            return (
+              <button
+                key={f.k}
+                onClick={() => updateFreq(f.k)}
+                style={{
+                  ...styles.settingsFreqBtn,
+                  ...(active ? styles.settingsFreqBtnActive : {})
+                }}
+              >
+                <span style={{
+                  ...styles.settingsFreqRadio,
+                  ...(active ? styles.settingsFreqRadioActive : {})
+                }}>
+                  {active && <span style={styles.settingsFreqRadioDot} />}
+                </span>
+                <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+                  <div style={styles.settingsFreqLabel}>{f.l}</div>
+                  <div style={styles.settingsFreqDesc}>{f.desc}</div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Honest tradeoffs — only show if relevant */}
+        {(draft.frequency === 'off' || draft.frequency === 'weekly') && hasLinkedStaff && (
+          <div style={styles.settingsConsequence}>
+            <div style={styles.settingsConsequenceTitle}>What your staff will see</div>
+            <p style={styles.settingsConsequenceBody}>
+              {draft.frequency === 'off'
+                ? 'Your linked staff will see "Wellness off" instead of a completion %. They won\'t see fatigue or soreness trends. Workload and recovery flags that combine wellness with training data will be less informative.'
+                : 'Weekly check-ins give your staff much less day-to-day signal. They\'ll still see the broad picture but may have less context if something starts to trend.'}
+              {' '}You can come back here any time.
+            </p>
+          </div>
+        )}
+
+        {/* Per-field toggles — collapsed under "Customise" */}
+        {draft.frequency !== 'off' && (
+          <>
+            <button
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              style={styles.settingsAdvancedToggle}
+            >
+              {showAdvanced ? 'Hide ' : 'Customise '}which questions to answer
+              <span style={{
+                display: 'inline-block', marginLeft: 6,
+                transform: showAdvanced ? 'rotate(90deg)' : 'none',
+                transition: 'transform 0.15s'
+              }}>›</span>
+            </button>
+
+            {showAdvanced && (
+              <div style={styles.settingsAdvancedPanel}>
+                <p style={styles.settingsGroupHint}>
+                  Hide questions that don't feel useful to you. Keeps the check-in shorter and more meaningful.
+                </p>
+                {fieldDefs.map(f => {
+                  const enabled = draft.enabledFields[f.key];
+                  const isLastEnabled = enabledCount === 1 && enabled;
+                  return (
+                    <div key={f.key} style={styles.settingsFieldRow}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={styles.settingsFieldLabel}>{f.label}</div>
+                        {isLastEnabled && (
+                          <div style={styles.settingsFieldHint}>Keep at least one</div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => toggleField(f.key)}
+                        disabled={isLastEnabled}
+                        style={{
+                          ...styles.invitePermToggle,
+                          background: enabled ? '#1a1a1a' : '#e0d9c8',
+                          cursor: isLastEnabled ? 'not-allowed' : 'pointer',
+                          opacity: isLastEnabled ? 0.6 : 1
+                        }}
+                        aria-label={enabled ? 'On' : 'Off'}
+                      >
+                        <span style={{
+                          ...styles.invitePermToggleKnob,
+                          transform: enabled ? 'translateX(20px)' : 'translateX(2px)'
+                        }} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
+
+        <div style={{ height: 28 }} />
+
+      </div>
+    </div>
+  );
+}
+
+
+// ============================================================
+// CoordinationNotesPanel — short, actionable notes from staff
+// Shown on athlete home when there are active notes.
+// Athletes can acknowledge ("got it") or archive (dismiss).
+// ============================================================
+function CoordinationNotesPanel({ notes, onAcknowledge, onArchive }) {
+  return (
+    <div style={styles.coordNotesPanel}>
+      <div style={styles.coordNotesHead}>
+        <span style={styles.coordNotesLabel}>From your team</span>
+        <span style={styles.coordNotesCount}>{notes.length}</span>
+      </div>
+      {notes.map(n => (
+        <div key={n.id} style={styles.coordNote}>
+          <div style={styles.coordNoteHead}>
+            <div style={styles.coordNoteAuthor}>
+              <span style={styles.coordNoteAuthorName}>{n.author}</span>
+              <span style={styles.coordNoteAuthorRole}>{n.role}</span>
+            </div>
+            <span style={styles.coordNoteDate}>{fmtShort(n.date)}</span>
+          </div>
+          <p style={styles.coordNoteText}>{n.text}</p>
+          <div style={styles.coordNoteActions}>
+            {!n.acknowledged ? (
+              <button
+                style={styles.coordNoteAckBtn}
+                onClick={() => onAcknowledge(n.id)}
+              >
+                Got it
+              </button>
+            ) : (
+              <span style={styles.coordNoteAcked}>✓ You've acknowledged this</span>
+            )}
+            <button
+              style={styles.coordNoteArchiveBtn}
+              onClick={() => onArchive(n.id)}
+              aria-label="Archive"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+
 // ============================================================
 // AthleteInjuriesView — athlete's own view of their injuries
 // Athletes can see all their own injuries (active and resolved),
@@ -4902,6 +5232,7 @@ function PractitionerApp({ currentUser, auditLog, recordAudit, onSwitchView, onO
   const [links, setLinks] = useState([]);
   const [selectedAthlete, setSelectedAthlete] = useState(null);
   const [filter, setFilter] = useState('all'); // all | flagged | injured | missing
+  const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState('roster'); // roster | performance
   const [showTeamAccess, setShowTeamAccess] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
@@ -4984,6 +5315,31 @@ function PractitionerApp({ currentUser, auditLog, recordAudit, onSwitchView, onO
   const addInjury = (inj) => {
     const newInj = { ...inj, id: `inj_${Date.now()}`, reportedOn: today() };
     setInjuries([newInj, ...injuries]);
+    // If this injury is a concussion, also create a concussion incident automatically.
+    // The two records are linked via linkedInjuryId so we can keep them in sync.
+    const isConcussion = (
+      /concussion/i.test(inj.injuryType || '') ||
+      /concussion|head|brain/i.test(inj.diagnosis || '') ||
+      /head|skull/i.test(inj.bodyRegion || '')
+    );
+    if (isConcussion) {
+      const newCi = {
+        id: `ci_${Date.now()}_auto`,
+        athleteId: inj.athleteId,
+        date: inj.occurredOn || today(),
+        mechanism: inj.mechanism || 'Reported via injury log',
+        description: inj.activityContext || inj.athleteDescription || 'Auto-linked from injury record',
+        sport: inj.activity || null,
+        linkedInjuryId: newInj.id,
+        autoCreated: true,
+        reportedBy: inj.reportedBy || 'Auto-linked',
+        symptoms: inj.whatYouFelt || null,
+        // RTP follows the linked injury — these stay editable separately if needed
+        rtpStatus: 'stage_1',
+        notes: 'Auto-created from injury record. Update with SCAT details and assessment.'
+      };
+      setConcussionIncidents(prev => [newCi, ...prev]);
+    }
   };
 
   const updateInjury = (id, patch) => {
@@ -5009,6 +5365,17 @@ function PractitionerApp({ currentUser, auditLog, recordAudit, onSwitchView, onO
   const addFile = (f) => {
     const newF = { ...f, id: `f_${Date.now()}`, date: today() };
     setFiles([newF, ...files]);
+  };
+
+  const addNote = (n) => {
+    const newN = {
+      ...n,
+      id: `n_${Date.now()}`,
+      date: today(),
+      author: currentUser?.name || 'Unknown',
+      role: currentUser?.title || ROLE_LABELS[currentUser?.role] || 'Staff'
+    };
+    setNotes([newN, ...notes]);
   };
 
   // Create one or more athlete links (invite flow)
@@ -5115,9 +5482,17 @@ function PractitionerApp({ currentUser, auditLog, recordAudit, onSwitchView, onO
     const flags = [];
     if (acwr && acwr > 1.5) flags.push({ type: 'load', label: 'Load spike' });
     if (mon && mon > 2 && weekly.total > 200) flags.push({ type: 'monotony', label: 'Low variation' });
-    if (wellAvg && wellAvg > 4) flags.push({ type: 'wellness', label: 'Wellness ↓' });
+    // Wellness-related flags only meaningful if the athlete is doing check-ins
+    const wellnessFreq = a.wellnessSettings?.frequency || 'daily';
+    if (wellAvg && wellAvg > 4 && wellnessFreq !== 'off') flags.push({ type: 'wellness', label: 'Wellness ↓' });
     if (dayssince !== null && dayssince > 4) flags.push({ type: 'missing', label: 'Missing data' });
-    if (ac.length < 3) flags.push({ type: 'compliance', label: 'Low compliance' });
+    // Compliance flag: scale expectation to chosen frequency.
+    // 'off' is never low-compliance (opted out is a choice, not a problem).
+    const minExpected = wellnessFreq === 'off' ? 0
+                      : wellnessFreq === 'weekly' ? 1
+                      : wellnessFreq === 'three_per_week' ? 2
+                      : 3; // daily
+    if (minExpected > 0 && ac.length < minExpected) flags.push({ type: 'compliance', label: 'Low compliance' });
 
     let status = 'Stable';
     if (flags.some(f => f.type === 'load' || f.type === 'wellness')) status = 'Review';
@@ -5128,7 +5503,19 @@ function PractitionerApp({ currentUser, auditLog, recordAudit, onSwitchView, onO
   });
 
   // Filter
+  const normalisedQuery = searchQuery.trim().toLowerCase();
   const visibleRows = rows.filter(r => {
+    // Search by name, position, player ID, team, squad
+    if (normalisedQuery) {
+      const haystack = [
+        r.athlete.name,
+        r.athlete.position,
+        r.athlete.playerId,
+        r.athlete.team,
+        r.athlete.squad
+      ].filter(Boolean).join(' ').toLowerCase();
+      if (!haystack.includes(normalisedQuery)) return false;
+    }
     if (filter === 'flagged') return r.flags.length > 0;
     if (filter === 'missing') return r.flags.some(f => f.type === 'missing' || f.type === 'compliance');
     if (filter === 'injured') return (r.athlete.injuryStatus || 'available') !== 'available';
@@ -5138,13 +5525,26 @@ function PractitionerApp({ currentUser, auditLog, recordAudit, onSwitchView, onO
   // Org summary
   const totalAthletes = rows.length;
   const flaggedCount = rows.filter(r => r.flags.length > 0).length;
-  const wellnessCompletion = Math.round(
-    (rows.reduce((s, r) => s + Math.min(r.checkins.filter(c => {
-      const cd = new Date(c.date), end = new Date(today()), cutoff = new Date(end);
-      cutoff.setDate(end.getDate() - 6);
-      return cd >= cutoff && cd <= end;
-    }).length, 7), 0) / (totalAthletes * 7)) * 100
+
+  // Wellness compliance respects each athlete's chosen frequency.
+  // Athletes opted out ('off') are excluded entirely so they don't drag the % down.
+  // Reduced-frequency athletes have a lower expected count.
+  const wellnessParticipating = rows.filter(r =>
+    (r.athlete.wellnessSettings?.frequency || 'daily') !== 'off'
   );
+  const wellnessCompletion = wellnessParticipating.length === 0 ? 100 : Math.round(
+    (wellnessParticipating.reduce((s, r) => {
+      const freq = r.athlete.wellnessSettings?.frequency || 'daily';
+      const expectedPerWeek = freq === 'three_per_week' ? 3 : freq === 'weekly' ? 1 : 7;
+      const actual = r.checkins.filter(c => {
+        const cd = new Date(c.date), end = new Date(today()), cutoff = new Date(end);
+        cutoff.setDate(end.getDate() - 6);
+        return cd >= cutoff && cd <= end;
+      }).length;
+      return s + Math.min(actual / expectedPerWeek, 1);
+    }, 0) / wellnessParticipating.length) * 100
+  );
+  const wellnessOffCount = totalAthletes - wellnessParticipating.length;
   const teamLoad = Math.round(rows.reduce((s, r) => s + r.weekly.total, 0) / Math.max(rows.length, 1));
 
   // Mutation handlers passed to athlete detail (for entering data in-context)
@@ -5182,6 +5582,7 @@ function PractitionerApp({ currentUser, auditLog, recordAudit, onSwitchView, onO
       <AthleteDetail
         row={row}
         notes={notes.filter(n => n.athleteId === selectedAthlete)}
+        onAddNote={(noteData) => addNote({ ...noteData, athleteId: selectedAthlete })}
         perfData={perfData}
         currentUser={currentUser}
         links={links}
@@ -5279,10 +5680,32 @@ function PractitionerApp({ currentUser, auditLog, recordAudit, onSwitchView, onO
       {/* Org KPIs */}
       <div style={styles.pKpiGrid}>
         <Kpi label="Squad" value={totalAthletes} sub="active athletes" />
-        <Kpi label="Wellness completion" value={`${wellnessCompletion}%`} sub="last 7 days" trend={wellnessCompletion >= 70 ? 'up' : 'down'} />
+        <Kpi label="Wellness completion" value={`${wellnessCompletion}%`} sub={wellnessOffCount > 0 ? `last 7 days · ${wellnessOffCount} opted out` : 'last 7 days'} trend={wellnessCompletion >= 70 ? 'up' : 'down'} />
         <AvailabilityKpi rows={rows} />
         <Kpi label="Flagged" value={flaggedCount} sub={`of ${totalAthletes} for review`} accent={flaggedCount > 0} />
       </div>
+
+      {/* Search field — only show when there are enough athletes to warrant it */}
+      {rows.length > 5 && (
+        <div style={styles.rosterSearchWrap}>
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search athletes by name, position, ID…"
+            style={styles.rosterSearchInput}
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              style={styles.rosterSearchClear}
+              aria-label="Clear search"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Filters */}
       <div className="tempo-scroll-x" style={styles.pFilters}>
@@ -5317,6 +5740,18 @@ function PractitionerApp({ currentUser, auditLog, recordAudit, onSwitchView, onO
           });
           const groupNames = Object.keys(groups);
           const showHeaders = groupNames.length > 1; // only show headers if 2+ contexts
+
+          // No results from search (but the user does have athletes)
+          if (groupNames.length === 0 && rows.length > 0 && normalisedQuery) {
+            return (
+              <div style={styles.rosterSearchEmpty}>
+                No athletes match "{searchQuery}".
+                <button onClick={() => setSearchQuery('')} style={styles.rosterSearchEmptyBtn}>
+                  Clear search
+                </button>
+              </div>
+            );
+          }
 
           // Brand-new staff with no athletes: show the empty-caseload welcome
           if (groupNames.length === 0) {
@@ -7592,7 +8027,115 @@ function StatusDot({ status }) {
 // ============================================================
 // Athlete detail (practitioner view)
 // ============================================================
-function AthleteDetail({ row, notes, perfData, currentUser, links, recordAudit, onBack }) {
+// ============================================================
+// NoteComposer — practitioner-side composer for athlete notes
+// Visibility decides who sees it:
+//   - athlete: athlete + all staff (coordination notes on their home)
+//   - staff: staff with view_notes only
+//   - medical: staff with view_medical only
+// ============================================================
+function NoteComposer({ onSave, currentUser, canMedical }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  const [visibility, setVisibility] = useState('athlete');
+  const [type, setType] = useState('Coordination');
+
+  if (!open) {
+    return (
+      <button style={styles.noteComposerOpenBtn} onClick={() => setOpen(true)}>
+        + Add a note
+      </button>
+    );
+  }
+
+  const visOptions = [
+    { k: 'athlete', l: 'Athlete + staff', desc: 'Shows on the athlete\'s home as a coordination note. Best for quick instructions.' },
+    { k: 'staff',   l: 'Staff only',      desc: 'Coaches and clinicians with notes access. Not visible to the athlete.' }
+  ];
+  if (canMedical) {
+    visOptions.push({ k: 'medical', l: 'Medical-restricted', desc: 'Only staff with medical access. For clinical detail.' });
+  }
+
+  const handleSave = () => {
+    if (!text.trim()) return;
+    onSave({
+      text: text.trim(),
+      visibility,
+      type
+    });
+    setText('');
+    setOpen(false);
+  };
+
+  return (
+    <div style={styles.noteComposerCard}>
+      <div style={styles.noteComposerHead}>
+        <div style={styles.noteComposerTitle}>New note</div>
+        <button
+          onClick={() => { setOpen(false); setText(''); }}
+          style={styles.userSheetClose}
+          aria-label="Close"
+        >
+          <X size={16} />
+        </button>
+      </div>
+
+      <textarea
+        value={text}
+        onChange={e => setText(e.target.value)}
+        rows={3}
+        placeholder={
+          visibility === 'athlete'
+            ? "e.g. Skip the conditioning block tonight — just the gym session."
+            : "Add your note here…"
+        }
+        style={styles.noteComposerTextarea}
+        autoFocus
+      />
+
+      <div style={styles.noteComposerLabel}>Who can see this?</div>
+      <div style={styles.noteComposerVisRow}>
+        {visOptions.map(o => (
+          <button
+            key={o.k}
+            onClick={() => setVisibility(o.k)}
+            style={{
+              ...styles.noteComposerVisBtn,
+              ...(visibility === o.k ? styles.noteComposerVisBtnActive : {})
+            }}
+          >
+            {o.l}
+          </button>
+        ))}
+      </div>
+      <p style={styles.noteComposerVisHint}>
+        {visOptions.find(o => o.k === visibility)?.desc}
+      </p>
+
+      <div style={styles.noteComposerActions}>
+        <button
+          onClick={() => { setOpen(false); setText(''); }}
+          style={styles.perfCancelBtn}
+        >
+          Cancel
+        </button>
+        <button
+          onClick={handleSave}
+          disabled={!text.trim()}
+          style={{
+            ...styles.perfSaveBtn,
+            opacity: text.trim() ? 1 : 0.4
+          }}
+        >
+          {visibility === 'athlete' ? 'Send to athlete' : 'Save note'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
+function AthleteDetail({ row, notes, onAddNote, perfData, currentUser, links, recordAudit, onBack }) {
   const [tab, setTab] = useState('overview');
   const [showMedical, setShowMedical] = useState(false); // toggle for medical-restricted view
   const { athlete, weekly, acwr, mon, wellAvg, workouts, checkins } = row;
@@ -7603,6 +8146,7 @@ function AthleteDetail({ row, notes, perfData, currentUser, links, recordAudit, 
   const canMedical = can('view_medical');
   const canGps = can('view_gps');
   const canNotes = can('view_notes');
+  const canEditNotes = can('edit_notes');
   const canInjuries = can('view_injuries');
   const canReports = can('view_reports');
 
@@ -7801,29 +8345,44 @@ function AthleteDetail({ row, notes, perfData, currentUser, links, recordAudit, 
               body="Notes from coaches, clinicians, and consultants are only visible to staff with notes access for this athlete."
               requiredRole="Coach, clinician, or consultant"
             />
-          ) : (() => {
-            // Medical-visibility filter: even if you can see notes, you can't see
-            // medical-restricted ones without view_medical
-            const visibleNotes = notes.filter(n => {
-              if (n.visibility === 'medical' && !canMedical) return false;
-              return true;
-            });
-            return visibleNotes.length === 0 ? (
-              <div style={{ padding: 40, textAlign: 'center', color: '#8a8275' }}>
-                {notes.length === 0 ? 'No notes for this athlete.' : 'No notes visible at your access level.'}
-              </div>
-            ) : visibleNotes.map(n => (
-              <div key={n.id} style={styles.pNoteCard}>
-                <div style={styles.pNoteHead}>
-                  <span style={styles.pNoteType}>{n.type}</span>
-                  <span style={styles.pNoteAuthor}>{n.author} · {n.role}</span>
-                  <span style={styles.pNoteDate}>{fmtDate(n.date)}</span>
-                </div>
-                <p style={styles.pNoteText}>{n.text}</p>
-                <div style={styles.pNoteVis}>Visibility: {n.visibility}</div>
-              </div>
-            ));
-          })()}
+          ) : (
+            <>
+              {canEditNotes && onAddNote && (
+                <NoteComposer
+                  onSave={(n) => onAddNote(n)}
+                  currentUser={currentUser}
+                  canMedical={canMedical}
+                />
+              )}
+              {(() => {
+                // Medical-visibility filter: even if you can see notes, you can't see
+                // medical-restricted ones without view_medical
+                const visibleNotes = notes.filter(n => {
+                  if (n.visibility === 'medical' && !canMedical) return false;
+                  return true;
+                });
+                return visibleNotes.length === 0 ? (
+                  <div style={{ padding: 40, textAlign: 'center', color: '#8a8275' }}>
+                    {notes.length === 0 ? 'No notes for this athlete yet.' : 'No notes visible at your access level.'}
+                  </div>
+                ) : visibleNotes.map(n => (
+                  <div key={n.id} style={styles.pNoteCard}>
+                    <div style={styles.pNoteHead}>
+                      <span style={styles.pNoteType}>{n.type}</span>
+                      <span style={styles.pNoteAuthor}>{n.author} · {n.role}</span>
+                      <span style={styles.pNoteDate}>{fmtDate(n.date)}</span>
+                    </div>
+                    <p style={styles.pNoteText}>{n.text}</p>
+                    <div style={styles.pNoteVis}>
+                      Visibility: {n.visibility === 'athlete' ? 'Athlete + staff'
+                                  : n.visibility === 'medical' ? 'Medical-restricted'
+                                  : 'Staff only'}
+                    </div>
+                  </div>
+                ));
+              })()}
+            </>
+          )}
         </div>
       )}
 
@@ -8908,6 +9467,9 @@ function TestHistoryView({ tests }) {
     byTest[t.testKey].push(t);
   });
 
+  // Threshold for flagging significant deviation from rolling baseline
+  const FLAG_THRESHOLD = 0.20; // 20%
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {Object.entries(byTest).map(([key, results]) => {
@@ -8924,6 +9486,30 @@ function TestHistoryView({ tests }) {
           (meta.better === 'higher' && trend.direction === 'up') ||
           (meta.better === 'lower' && trend.direction === 'down')
         );
+
+        // Flag: latest vs rolling baseline of prior results (need 2+ priors for a baseline)
+        let flag = null;
+        const priorResults = sorted.slice(1);
+        if (priorResults.length >= 2 && typeof latest.value === 'number') {
+          const numericPriors = priorResults
+            .map(r => r.value)
+            .filter(v => typeof v === 'number');
+          if (numericPriors.length >= 2) {
+            const baseline = numericPriors.reduce((s, v) => s + v, 0) / numericPriors.length;
+            if (baseline > 0) {
+              const pctChange = (latest.value - baseline) / baseline;
+              const worsening = (meta.better === 'higher' && pctChange < 0) ||
+                                (meta.better === 'lower' && pctChange > 0);
+              if (worsening && Math.abs(pctChange) >= FLAG_THRESHOLD) {
+                flag = {
+                  baseline,
+                  pctChange,
+                  direction: meta.better === 'higher' ? 'down' : 'up'
+                };
+              }
+            }
+          }
+        }
 
         return (
           <div key={key} style={styles.perfInjCard}>
@@ -8948,6 +9534,24 @@ function TestHistoryView({ tests }) {
                 )}
               </div>
             </div>
+
+            {/* Significant deviation flag — surfaces when latest is >20% off baseline */}
+            {flag && (
+              <div style={styles.testFlagPanel}>
+                <div style={styles.testFlagIcon}>
+                  <AlertCircle size={14} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={styles.testFlagTitle}>
+                    {Math.abs(flag.pctChange * 100).toFixed(0)}% {flag.direction === 'down' ? 'below' : 'above'} baseline
+                  </div>
+                  <div style={styles.testFlagBody}>
+                    Latest {latest.value} {meta.unit} vs rolling baseline {flag.baseline.toFixed(1)} {meta.unit}
+                    ({priorResults.length} prior results). Worth a closer look.
+                  </div>
+                </div>
+              </div>
+            )}
 
             {sorted.length > 1 && (
               <div style={{ paddingTop: 10, borderTop: '1px solid #efeadd' }}>
@@ -11752,6 +12356,265 @@ const styles = {
   },
 
   // ===== Bulk testing session =====
+  // ===== Note composer (practitioner side) =====
+  noteComposerOpenBtn: {
+    width: '100%',
+    background: 'transparent', color: '#1a1a1a',
+    border: '1px dashed #c8b894', borderRadius: 12,
+    padding: '14px 16px',
+    fontSize: 13, fontWeight: 500,
+    cursor: 'pointer', fontFamily: 'inherit',
+    marginBottom: 14
+  },
+  noteComposerCard: {
+    background: '#fdfbf5', border: '1px solid #c8b894',
+    borderRadius: 14, padding: '16px 18px',
+    marginBottom: 14
+  },
+  noteComposerHead: {
+    display: 'flex', justifyContent: 'space-between',
+    alignItems: 'center', marginBottom: 12
+  },
+  noteComposerTitle: {
+    fontFamily: '"Fraunces", Georgia, serif',
+    fontSize: 16, fontWeight: 500, color: '#1a1a1a',
+    letterSpacing: '-0.01em'
+  },
+  noteComposerTextarea: {
+    width: '100%',
+    padding: '12px 14px',
+    background: '#f5f1e8', border: '1px solid #e0d9c8',
+    borderRadius: 10,
+    fontSize: 13, color: '#1a1a1a',
+    fontFamily: 'inherit', lineHeight: 1.5,
+    resize: 'vertical', boxSizing: 'border-box',
+    marginBottom: 14
+  },
+  noteComposerLabel: {
+    fontSize: 10, letterSpacing: '0.14em',
+    textTransform: 'uppercase', color: '#8a8275', fontWeight: 600,
+    marginBottom: 8
+  },
+  noteComposerVisRow: {
+    display: 'flex', gap: 6, flexWrap: 'wrap',
+    marginBottom: 8
+  },
+  noteComposerVisBtn: {
+    flex: 1, minWidth: 80,
+    background: '#fdfbf5', color: '#5a564d',
+    border: '1px solid #e0d9c8', borderRadius: 100,
+    padding: '8px 12px', fontSize: 11, fontWeight: 500,
+    cursor: 'pointer', fontFamily: 'inherit'
+  },
+  noteComposerVisBtnActive: {
+    background: '#1a1a1a', color: '#f5f1e8',
+    borderColor: '#1a1a1a', fontWeight: 600
+  },
+  noteComposerVisHint: {
+    fontSize: 11, color: '#5a564d',
+    fontStyle: 'italic', lineHeight: 1.5,
+    margin: '0 0 14px 0'
+  },
+  noteComposerActions: {
+    display: 'flex', gap: 8
+  },
+
+  // ===== Athlete Settings =====
+  settingsGroupLabel: {
+    fontFamily: '"Fraunces", Georgia, serif',
+    fontSize: 16, fontWeight: 500, color: '#1a1a1a',
+    letterSpacing: '-0.01em',
+    marginBottom: 6, marginTop: 10
+  },
+  settingsGroupHint: {
+    fontSize: 12, color: '#5a564d',
+    lineHeight: 1.5, marginBottom: 14
+  },
+  settingsFreqBtn: {
+    display: 'flex', alignItems: 'flex-start', gap: 12,
+    background: '#fdfbf5', border: '1px solid #e8e4dc',
+    borderRadius: 12, padding: '14px 16px',
+    cursor: 'pointer', fontFamily: 'inherit',
+    transition: 'border-color 0.15s ease'
+  },
+  settingsFreqBtnActive: {
+    borderColor: '#1a1a1a'
+  },
+  settingsFreqRadio: {
+    width: 20, height: 20, borderRadius: '50%',
+    border: '2px solid #c8b894',
+    background: 'transparent',
+    flexShrink: 0, marginTop: 2,
+    display: 'flex', alignItems: 'center', justifyContent: 'center'
+  },
+  settingsFreqRadioActive: {
+    borderColor: '#1a1a1a'
+  },
+  settingsFreqRadioDot: {
+    width: 10, height: 10, borderRadius: '50%',
+    background: '#1a1a1a'
+  },
+  settingsFreqLabel: {
+    fontSize: 14, fontWeight: 600, color: '#1a1a1a',
+    letterSpacing: '-0.01em'
+  },
+  settingsFreqDesc: {
+    fontSize: 12, color: '#5a564d',
+    lineHeight: 1.5, marginTop: 4
+  },
+  settingsConsequence: {
+    marginTop: 14,
+    padding: '12px 14px',
+    background: '#fdf5e9', border: '1px solid #efd9a8',
+    borderRadius: 10
+  },
+  settingsConsequenceTitle: {
+    fontSize: 11, letterSpacing: '0.08em',
+    textTransform: 'uppercase', color: '#a37b1a', fontWeight: 600,
+    marginBottom: 6
+  },
+  settingsConsequenceBody: {
+    fontSize: 12, color: '#5a564d',
+    lineHeight: 1.55, margin: 0
+  },
+  settingsAdvancedToggle: {
+    background: 'transparent', color: '#5a564d',
+    border: 'none', padding: '18px 0 8px 0',
+    fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
+    textDecoration: 'underline'
+  },
+  settingsAdvancedPanel: {
+    background: '#fdfbf5', border: '1px solid #e8e4dc',
+    borderRadius: 12, padding: '14px 16px 4px',
+    marginBottom: 10
+  },
+  settingsFieldRow: {
+    display: 'flex', alignItems: 'center', gap: 14,
+    padding: '10px 0', borderBottom: '1px solid #efeadd'
+  },
+  settingsFieldLabel: {
+    fontSize: 13, color: '#1a1a1a', fontWeight: 500
+  },
+  settingsFieldHint: {
+    fontSize: 10, color: '#8a8275', marginTop: 2,
+    fontStyle: 'italic'
+  },
+
+  // ===== Coordination notes panel (athlete home) =====
+  coordNotesPanel: {
+    background: '#fdfbf5',
+    border: '1px solid #e8e4dc',
+    borderRadius: 14,
+    padding: '14px 16px 6px',
+    marginBottom: 20
+  },
+  coordNotesHead: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    paddingBottom: 12,
+    marginBottom: 4,
+    borderBottom: '1px solid #efeadd'
+  },
+  coordNotesLabel: {
+    fontSize: 10, letterSpacing: '0.14em',
+    textTransform: 'uppercase', color: '#8a8275', fontWeight: 600
+  },
+  coordNotesCount: {
+    fontSize: 11, color: '#5a564d',
+    background: '#efeadd', padding: '2px 8px',
+    borderRadius: 100, fontWeight: 600
+  },
+  coordNote: {
+    padding: '12px 0',
+    borderBottom: '1px solid #efeadd'
+  },
+  coordNoteHead: {
+    display: 'flex', justifyContent: 'space-between',
+    alignItems: 'baseline', marginBottom: 6,
+    gap: 8
+  },
+  coordNoteAuthor: {
+    display: 'flex', flexDirection: 'column', minWidth: 0
+  },
+  coordNoteAuthorName: {
+    fontSize: 12, fontWeight: 600, color: '#1a1a1a'
+  },
+  coordNoteAuthorRole: {
+    fontSize: 10, color: '#8a8275', marginTop: 1,
+    letterSpacing: '0.02em'
+  },
+  coordNoteDate: {
+    fontSize: 10, color: '#8a8275',
+    letterSpacing: '0.04em', textTransform: 'uppercase',
+    flexShrink: 0
+  },
+  coordNoteText: {
+    fontSize: 13, color: '#1a1a1a',
+    lineHeight: 1.55, margin: '0 0 10px 0'
+  },
+  coordNoteActions: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    gap: 10
+  },
+  coordNoteAckBtn: {
+    background: '#1a1a1a', color: '#f5f1e8',
+    border: 'none', borderRadius: 100,
+    padding: '7px 14px', fontSize: 11, fontWeight: 600,
+    letterSpacing: '0.04em',
+    cursor: 'pointer', fontFamily: 'inherit'
+  },
+  coordNoteAcked: {
+    fontSize: 11, color: '#3a8a4d', fontWeight: 600,
+    fontStyle: 'italic'
+  },
+  coordNoteArchiveBtn: {
+    width: 26, height: 26, borderRadius: '50%',
+    background: '#efeadd', color: '#5a564d',
+    border: 'none', cursor: 'pointer',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    padding: 0
+  },
+
+  // ===== Roster search field =====
+  rosterSearchWrap: {
+    position: 'relative',
+    marginBottom: 12
+  },
+  rosterSearchInput: {
+    width: '100%',
+    padding: '11px 36px 11px 14px',
+    background: '#fdfbf5',
+    border: '1px solid #e0d9c8',
+    borderRadius: 10,
+    fontSize: 13,
+    color: '#1a1a1a',
+    fontFamily: 'inherit',
+    boxSizing: 'border-box',
+    outline: 'none'
+  },
+  rosterSearchClear: {
+    position: 'absolute',
+    right: 8, top: '50%', transform: 'translateY(-50%)',
+    width: 26, height: 26, borderRadius: '50%',
+    background: '#efeadd', color: '#5a564d',
+    border: 'none', cursor: 'pointer',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    padding: 0
+  },
+  rosterSearchEmpty: {
+    padding: '24px 16px',
+    background: '#fdfbf5',
+    border: '1px dashed #e0d9c8',
+    borderRadius: 10,
+    fontSize: 13, color: '#5a564d', textAlign: 'center',
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12
+  },
+  rosterSearchEmptyBtn: {
+    background: '#1a1a1a', color: '#f5f1e8',
+    border: 'none', borderRadius: 100,
+    padding: '8px 16px', fontSize: 12, fontWeight: 500,
+    cursor: 'pointer', fontFamily: 'inherit'
+  },
+
   // ===== Test search field =====
   testSearchWrap: {
     position: 'relative',
@@ -13524,23 +14387,21 @@ const styles = {
     cursor: 'pointer', fontFamily: 'inherit', width: '100%'
   },
   testingActionRow: {
-    display: 'flex', gap: 8, marginBottom: 4
+    display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 4
   },
   testingActionPrimary: {
-    flex: 2,
     background: '#1a1a1a', color: '#f5f1e8',
-    border: 'none', borderRadius: 100, padding: '11px 14px',
+    border: 'none', borderRadius: 100, padding: '12px 18px',
     fontSize: 13, fontWeight: 600, letterSpacing: '0.04em',
     cursor: 'pointer', fontFamily: 'inherit',
-    whiteSpace: 'nowrap'
+    width: '100%'
   },
   testingActionSecondary: {
-    flex: 1,
     background: 'transparent', color: '#1a1a1a',
-    border: '1px solid #1a1a1a', borderRadius: 100, padding: '11px 14px',
+    border: '1px solid #1a1a1a', borderRadius: 100, padding: '12px 18px',
     fontSize: 13, fontWeight: 600, letterSpacing: '0.04em',
     cursor: 'pointer', fontFamily: 'inherit',
-    whiteSpace: 'nowrap'
+    width: '100%'
   },
   perfTeamActionBar: {
     marginBottom: 16,
@@ -13660,6 +14521,29 @@ const styles = {
   perfStatValue: {
     fontFamily: '"Fraunces", Georgia, serif',
     fontSize: 16, color: '#1a1a1a'
+  },
+
+  // ===== Test deviation flag =====
+  testFlagPanel: {
+    display: 'flex', gap: 10, alignItems: 'flex-start',
+    padding: '10px 12px',
+    background: '#fdf5f0',
+    border: '1px solid #f0cbb8',
+    borderRadius: 8,
+    marginBottom: 12
+  },
+  testFlagIcon: {
+    color: '#9c3a23',
+    flexShrink: 0,
+    marginTop: 1
+  },
+  testFlagTitle: {
+    fontSize: 12, color: '#9c3a23', fontWeight: 600,
+    marginBottom: 3
+  },
+  testFlagBody: {
+    fontSize: 11, color: '#5a564d',
+    lineHeight: 1.5
   },
 
   perfInjCard: {
