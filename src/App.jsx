@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Activity, Users, ChevronRight, Plus, Check, AlertCircle, TrendingUp, TrendingDown, Minus, X, ArrowLeft, FileText, Filter } from 'lucide-react';
+import { signUp, signInWithPassword, signOut, getSession, onAuthStateChange } from './lib/auth';
 
 // ============================================================
 // Demo configuration
@@ -1477,6 +1478,7 @@ const ROLE_LABELS = {
   consultant: 'Consultant',
   club_admin: 'Club Admin',
   athlete: 'Athlete',
+  practitioner: 'Practitioner',
   self: 'You'
 };
 
@@ -10847,24 +10849,86 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [mode, setMode] = useState(null); // null until login | 'athlete' | 'practitioner'
   const [showSwitcher, setShowSwitcher] = useState(false);
-  const [showLogin, setShowLogin] = useState(false);
+  const [session, setSession] = useState(null);   // real Supabase session (gates the app)
+  const [authChecked, setAuthChecked] = useState(false); // session resolved on load yet?
   const [auditLog, setAuditLog] = useState([]);
+
+  // Build the current-user object from the REAL authenticated session. Sign-up
+  // stores display_name / default_role / title in the auth user's metadata, so we
+  // can derive identity synchronously without an async profile fetch (matches the
+  // brief's rule: route off session metadata, never block on the profiles row).
+  // The in-app switcher + view toggle still let you move between athlete and
+  // practitioner freely afterward; this only sets the *initial* identity + view.
+  //
+  // NOTE: the app body below is still seed-backed in M1 — only the identity (name,
+  // role, title) is real. A real athlete has no athleteId yet, so its seed body is
+  // empty until M3 brings in real athlete/profile data. The demo IdentitySwitcher
+  // stays in the code as a manual escape hatch but no longer drives this default.
+  const realUserFromSession = (sess) => {
+    const u = sess.user || {};
+    const meta = u.user_metadata || {};
+    const isAthlete = meta.default_role === 'athlete';
+    const name = (meta.display_name || '').trim() || u.email || 'You';
+    const initials =
+      name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() ||
+      (u.email || '?').slice(0, 2).toUpperCase();
+    return {
+      id: u.id,
+      name,
+      email: u.email || '',
+      role: isAthlete ? 'athlete' : 'practitioner',
+      title: (meta.title || '').trim(),
+      isStaff: !isAthlete,
+      avatar: initials,
+      // No athleteId: real athlete data arrives in M3. Until then an athlete-role
+      // user simply has no seed-backed body to drive.
+    };
+  };
+
+  // Reconcile React state with the real auth session. Called on initial load and
+  // on every auth change (sign-in, sign-out, token refresh).
+  const applySession = (sess) => {
+    setSession(sess);
+    if (!sess) {
+      setCurrentUser(null);
+      setMode(null);
+      return;
+    }
+    setIntroSeen(true); // a returning, logged-in user skips the landing splash
+    const realUser = realUserFromSession(sess);
+    // Only set the identity/view if one isn't already chosen — never clobber a
+    // mid-session identity switch or view toggle on a token refresh.
+    setCurrentUser(prev => prev ?? realUser);
+    setMode(prev => prev ?? realUser.role);
+  };
 
   useEffect(() => {
     const seed = getSeedData();
     setAuditLog(seed.teamAuditLog || []);
     setIntroSeen(false);
+
+    let active = true;
+    getSession().then(sess => {
+      if (!active) return;
+      applySession(sess);
+      setAuthChecked(true);
+    });
+    const { data: sub } = onAuthStateChange(sess => {
+      if (!active) return;
+      applySession(sess);
+      setAuthChecked(true);
+    });
+    return () => { active = false; sub?.subscription?.unsubscribe(); };
   }, []);
 
   const dismissIntro = () => {
     setIntroSeen(true);
-    setShowLogin(true);
   };
 
+  // Used by the in-app IdentitySwitcher to switch which demo identity drives the
+  // body within an active session. Auth is unchanged — this is view/identity only.
   const handleLogin = (user) => {
     setCurrentUser(user);
-    setShowLogin(false);
-    // Route to the appropriate app based on role
     if (user.isStaff) {
       setMode('practitioner');
     } else {
@@ -10872,10 +10936,12 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await signOut();
+    // The auth listener clears session/currentUser/mode; clear locally too so the
+    // UI updates immediately even before the event lands.
     setCurrentUser(null);
     setMode(null);
-    setShowLogin(true);
   };
 
   // Audit recorder — passed down so any sensitive view can log itself
@@ -10905,14 +10971,26 @@ export default function App() {
     );
   }
 
-  if (showLogin || !currentUser) {
+  // Wait for the session to resolve on load before deciding what to show, so a
+  // persisted session doesn't flash the login screen.
+  if (!authChecked) {
+    return <div style={styles.root}><style>{globalCSS}</style></div>;
+  }
+
+  // Real auth gate: no session → login / signup. A persisted session skips this.
+  if (!session) {
     return (
       <div style={styles.root}>
         <style>{globalCSS}</style>
-        <LoginScreen onLogin={handleLogin} />
+        <LoginScreen />
         <FeedbackWidget currentUser={null} />
       </div>
     );
+  }
+
+  // Session exists but the demo identity hasn't been seeded yet (brief moment).
+  if (!currentUser) {
+    return <div style={styles.root}><style>{globalCSS}</style></div>;
   }
 
   // For demos: an athlete user can switch which athlete profile to view
@@ -11049,6 +11127,8 @@ function SignupFlow({ onComplete, onCancel }) {
   const [staffRole, setStaffRole] = useState(null);
   const [staffTitle, setStaffTitle] = useState('');
   const [emailError, setEmailError] = useState(null);
+  const [submitError, setSubmitError] = useState(null);
+  const [busy, setBusy] = useState(false);
 
   const sports = [
     { k: 'running',       l: 'Running',                     desc: 'Road, trail, ultra, marathon', icon: '↑' },
@@ -11084,62 +11164,41 @@ function SignupFlow({ onComplete, onCancel }) {
       setEmailError('Password must be at least 6 characters.');
       return;
     }
-    // Check for collision with seeded user emails
-    const seed = getSeedData();
-    if ((seed.teamUsers || []).find(u => u.email.toLowerCase() === email.trim().toLowerCase())) {
-      setEmailError('That email is already in use. Try signing in instead.');
-      return;
-    }
+    // Email uniqueness is enforced by Supabase Auth at signup (handleFinish).
     setStep(accountType === 'staff' ? 'role' : 'sport');
   };
 
-  const handleFinish = () => {
-    const id = `usr_new_${Date.now().toString(36)}`;
-    const avatar = name.trim().split(/\s+/).map(p => p[0]).slice(0, 2).join('').toUpperCase() || '?';
+  const handleFinish = async () => {
+    setSubmitError(null);
+    const defaultRole = accountType === 'staff' ? 'practitioner' : 'athlete';
+    const roleInfo = staffRoles.find(r => r.k === staffRole);
+    const title = accountType === 'staff' ? (staffTitle.trim() || roleInfo?.l || '') : '';
 
-    if (accountType === 'staff') {
-      const roleInfo = staffRoles.find(r => r.k === staffRole);
-      const newUser = {
-        id, name: name.trim(), email: email.trim().toLowerCase(),
-        role: staffRole,
-        title: staffTitle.trim() || roleInfo?.l || '',
-        orgRole: staffRole === 'club_admin' ? 'admin'
-              : staffRole === 'physio'     ? 'clinician'
-              : staffRole === 'consultant' ? 'consultant'
-              : 'coach',
-        isStaff: true, avatar,
-        phone: '',
-        contactSharing: { phone: false, email: true }
-      };
-      // Staff signup creates a user but no athlete. They start with an empty caseload.
-      onComplete(newUser, null);
+    setBusy(true);
+    const { data, error: authError } = await signUp({
+      email: email.trim().toLowerCase(),
+      password,
+      displayName: name.trim(),
+      defaultRole,
+      title,
+    });
+    setBusy(false);
+
+    if (authError) {
+      setSubmitError(authError.message);
       return;
     }
-
-    // Athlete signup
-    const athleteId = `ath_new_${Date.now().toString(36)}`;
-    const sportInfo = sports.find(s => s.k === sport);
-    const newUser = {
-      id, name: name.trim(), email: email.trim().toLowerCase(), role: 'athlete',
-      athleteId, isStaff: false, avatar, independent: true
-    };
-    const newAthlete = {
-      id: athleteId,
-      name: name.trim(),
-      playerId: null,
-      team: null,  // independent
-      squad: null,
-      position: sportInfo?.l || 'Athlete',
-      injuryStatus: 'available',
-      injuryNote: null,
-      profile: {
-        primarySport: sportInfo?.l || 'General training',
-        contactEmail: email.trim().toLowerCase()
-      },
-      contactSharing: { phone: false, email: true, emergencyContact: false, gp: false, notes: '' },
-      ownerUserId: id
-    };
-    onComplete(newUser, newAthlete);
+    // With email confirmation disabled (pilot), signUp returns an active session
+    // and the App-level auth listener routes in. If there's no session, the
+    // dashboard still has "Confirm email" enabled.
+    if (!data?.session) {
+      setSubmitError(
+        'Account created, but a confirmation step is enabled. Disable "Confirm email" in ' +
+        'Supabase → Authentication → Providers → Email, then sign in.'
+      );
+      return;
+    }
+    onComplete?.();
   };
 
   // ===== STEP: IDENTITY =====
@@ -11425,18 +11484,22 @@ function SignupFlow({ onComplete, onCancel }) {
             </p>
           </div>
 
+          {submitError && <div style={styles.loginError}>{submitError}</div>}
+
           <div style={styles.signupActions}>
             <button
               style={styles.perfCancelBtn}
               onClick={() => setStep(isStaff ? 'role' : 'sport')}
+              disabled={busy}
             >
               Back
             </button>
             <button
-              style={{ ...styles.loginSubmit, flex: 1 }}
+              style={{ ...styles.loginSubmit, flex: 1, opacity: busy ? 0.6 : 1 }}
               onClick={handleFinish}
+              disabled={busy}
             >
-              {isStaff ? 'Open caseload' : 'Start training'}
+              {busy ? 'Creating account…' : (isStaff ? 'Open caseload' : 'Start training')}
             </button>
           </div>
         </div>
@@ -11448,72 +11511,37 @@ function SignupFlow({ onComplete, onCancel }) {
 }
 
 
-function LoginScreen({ onLogin }) {
+function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showDemoPicker, setShowDemoPicker] = useState(false);
   const [showSignup, setShowSignup] = useState(false);
   const [error, setError] = useState(null);
-  const [users, setUsers] = useState([]);
+  const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    const seed = getSeedData();
-    setUsers(seed.teamUsers || []);
-  }, []);
-
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e?.preventDefault?.();
     setError(null);
     if (!email) { setError('Enter your email.'); return; }
     if (!password) { setError('Enter your password.'); return; }
-    const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-    if (!user) {
-      setError("We can't find an account with that email. Use the demo picker or create an account.");
+    setBusy(true);
+    const { error: authError } = await signInWithPassword({ email: email.trim(), password });
+    setBusy(false);
+    if (authError) {
+      setError(
+        /invalid login credentials/i.test(authError.message)
+          ? 'That email or password is incorrect.'
+          : authError.message
+      );
       return;
     }
-    // Demo: any password works
-    onLogin(user);
-  };
-
-  const handleSignupComplete = (newUser, newAthlete) => {
-    // Mutate seed in-memory so this user can immediately interact with the rest of the app
-    const seed = getSeedData();
-    seed.teamUsers.push(newUser);
-    // Athlete signups also create an athlete record + self-link.
-    // Staff signups create only the user — they start with an empty caseload.
-    if (newAthlete) {
-      seed.teamAthletes.push(newAthlete);
-      seed.teamAthleteLinks.push({
-        id: `lnk_self_${newAthlete.id}`,
-        athleteId: newAthlete.id,
-        userId: newUser.id,
-        role: 'self',
-        status: 'active',
-        permissions: { ...(seed.PERM_TEMPLATES?.self || {}) },
-        acceptedAt: new Date().toISOString().slice(0, 10),
-        revokedAt: null
-      });
-    }
-    setShowSignup(false);
-    onLogin(newUser);
+    // Success: the App-level auth listener picks up the session and routes in.
   };
 
   if (showSignup) {
     return (
       <SignupFlow
-        onComplete={handleSignupComplete}
+        onComplete={() => setShowSignup(false)}
         onCancel={() => setShowSignup(false)}
-      />
-    );
-  }
-
-  if (showDemoPicker) {
-    return (
-      <IdentitySwitcher
-        currentUserId={null}
-        onPick={onLogin}
-        onClose={() => setShowDemoPicker(false)}
-        asLoginPicker
       />
     );
   }
@@ -11551,8 +11579,8 @@ function LoginScreen({ onLogin }) {
 
           {error && <div style={styles.loginError}>{error}</div>}
 
-          <button type="submit" style={styles.loginSubmit}>
-            Sign in
+          <button type="submit" style={{ ...styles.loginSubmit, opacity: busy ? 0.6 : 1 }} disabled={busy}>
+            {busy ? 'Signing in…' : 'Sign in'}
           </button>
 
           <div style={styles.loginLinks}>
@@ -11571,15 +11599,8 @@ function LoginScreen({ onLogin }) {
           Create an account
         </button>
 
-        <button
-          style={styles.loginDemoBtn}
-          onClick={() => setShowDemoPicker(true)}
-        >
-          Demo mode: jump to identity
-        </button>
-
         <div style={styles.loginFoot}>
-          Pilot build · For demo only
+          Pilot build
         </div>
       </div>
     </div>
