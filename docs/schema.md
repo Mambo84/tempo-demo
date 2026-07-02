@@ -17,6 +17,7 @@ Migrations (run in order in the Supabase SQL Editor):
 | `0007_audit.sql` | `audit_log` + RLS |
 | `0008_seed_dev.sql` | Dev-only seed (4 users, 1 athlete, links, workout, injury) |
 | `0009_verify_rls_dev.sql` | Dev-only RLS proof harness |
+| `0010_invitations.sql` | `invitations` table + RLS, `accept_invitation`/`list_my_invitations` RPCs, `shares_athlete_with`, broadened `profiles` SELECT, expiry enforcement in the four helpers (M5) |
 
 ## File-split decision
 
@@ -40,6 +41,10 @@ reads athletes).
 | `has_athlete_access(athlete)` | self, or any active link |
 | `has_athlete_permission(athlete, perm)` | self (always), or an active link whose `permissions->>perm` is true |
 | `has_athlete_admin(athlete)` | self, or an active `role='club_admin'` link |
+| `shares_athlete_with(other)` | caller and `other` both have an active link to a common athlete (added M5, for `profiles` SELECT) |
+
+As of **M5**, "active link" in every helper also means **unexpired** —
+`expires_at IS NULL OR expires_at > now()` (M5 decision 3).
 
 ### Per-table policy summary
 
@@ -56,6 +61,7 @@ reads athletes).
 | `notes` | self → `visibility='athlete'` only; others → `view_notes` and visibility allows (`medical` needs `view_medical`) | self or `edit_notes`; author must be caller |
 | `athlete_files` | self → all own; others → by visibility (`medical` needs `view_medical`) | self or admin; uploader must be caller ‡ |
 | `audit_log` | own access rows, or self (the athlete) | insert only, `user_id = auth.uid()`; no update/delete |
+| `invitations` (M5) | `inviter_user_id = auth.uid()` (invitee reads via `list_my_invitations()` RPC) | insert/update: `inviter_user_id = auth.uid()`; no delete (audit) |
 
 † §6.8 is silent on `tests`. Read = any active link; write = `edit_workouts`
 (tests are treated as training data). Revisit if a dedicated permission is wanted.
@@ -89,6 +95,36 @@ sharing are built.
 6. **`audit_log` inserts** are allowed where `user_id = auth.uid()` (you can only
    log your own access). No service-role function needed at this stage; there is no
    update/delete policy, so the log is immutable through the API.
+
+## Decisions taken at M5 (Brad signed off)
+
+7. **Practitioner→athlete invites use a dedicated `invitations` table (Option A),
+   not `athlete_user_links`.** The practitioner initiates by email before the
+   athlete may have an account, so there's no `athlete_id` to reference and the
+   practitioner isn't an admin of a not-yet-existent athlete — `athlete_user_links`
+   (NOT NULL `athlete_id`, admin-only insert) can't hold that pending intent.
+   Rejected **Option B** (reuse `athlete_user_links`, require the athlete to sign
+   up + create a profile first, definer RPC to create the pending link): it forces
+   athlete-onboards-first and leaks email existence. The `invitations` table holds
+   the intent; `accept_invitation()` creates the real link on the athlete's accept.
+   (Athlete→practitioner invites are **M5.5**, and extend the same table.)
+8. **`profiles` SELECT broadened** (fulfilling the M2 §5 follow-up):
+   `auth.uid() = id OR shares_athlete_with(id)`. Linked users can see each other's
+   display name/title.
+9. **Invitee discovery via `list_my_invitations()` (SECURITY DEFINER), not a table
+   policy.** A `invited_email = auth.email()` SELECT policy would be *safe* (returns
+   only the caller's own invites) but insufficient — pre-accept the invitee can't
+   read the inviter's `profiles` row, so the RPC joins the inviter name and
+   email-scopes in one call. Table SELECT stays inviter-only.
+10. **`accept_invitation` keeps the invitation row** (`status='accepted'`,
+    `accepted_at`, `accepted_link_id`) as an audit trail — not deleted. Mirrors the
+    revoke-don't-delete pattern for links.
+11. **Expiry now enforced in RLS** (M5 decision 3): the four helpers require the
+    active link be unexpired. Previously (M2) expiry was UI-only.
+12. **`invited_name` / `invited_by_athlete` are not columns on `athlete_user_links`**
+    — the practitioner's name comes from their profile post-accept, and `invited_by`
+    marks the initiator. The `invitations` table has its own `athlete_name` /
+    `message` display fields.
 
 ## Notable schema details
 

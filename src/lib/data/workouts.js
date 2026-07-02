@@ -85,6 +85,19 @@ export async function listWorkouts(athleteId) {
   return (data || []).map(rowToWorkout);
 }
 
+// Workouts for several athletes at once (practitioner roster summaries). RLS
+// filters to those the caller may view; athletes without view_workouts drop out.
+export async function listWorkoutsForAthletes(athleteIds) {
+  if (!athleteIds || !athleteIds.length) return [];
+  const { data, error } = await supabase
+    .from('workouts')
+    .select('*')
+    .in('athlete_id', athleteIds)
+    .order('date', { ascending: false });
+  if (error) throw error;
+  return (data || []).map(rowToWorkout);
+}
+
 // Insert a new session. `createdBy` is the acting user's id (auth.uid()).
 export async function createWorkout(athleteId, input, createdBy) {
   const row = {

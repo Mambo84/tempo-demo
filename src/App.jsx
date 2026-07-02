@@ -4,6 +4,8 @@ import { signUp, signInWithPassword, signOut, getSession, onAuthStateChange } fr
 import { getMyAthlete, createAthlete, updateWellnessSettings } from './lib/data/athletes';
 import * as WorkoutsData from './lib/data/workouts';
 import * as WellnessData from './lib/data/wellness';
+import * as InvitationsData from './lib/data/invitations';
+import * as LinksData from './lib/data/links';
 
 // ============================================================
 // Demo configuration
@@ -1566,6 +1568,7 @@ function AthleteApp({ currentUser, demoAthleteId, realAthlete, auditLog, recordA
   const [coordinationNotes, setCoordinationNotes] = useState([]);
   const [editingInjury, setEditingInjury] = useState(null);
   const [links, setLinks] = useState([]);
+  const [invitations, setInvitations] = useState([]); // pending invites TO this athlete (M5)
   const [demoAthlete, setDemoAthlete] = useState(null);
 
   // Wellness preferences — owned by the athlete. Default: daily, all enabled.
@@ -1603,8 +1606,13 @@ function AthleteApp({ currentUser, demoAthleteId, realAthlete, auditLog, recordA
       Promise.all([
         WorkoutsData.listWorkouts(realAthlete.id),
         WellnessData.listWellness(realAthlete.id),
+        LinksData.listAthleteLinks(realAthlete.id),      // who has access (M5)
+        InvitationsData.listMyInvitations(),             // pending invites to accept (M5)
       ])
-        .then(([ws, cs]) => { if (active) { setWorkouts(ws); setCheckins(cs); } })
+        .then(([ws, cs, lnks, invs]) => {
+          if (!active) return;
+          setWorkouts(ws); setCheckins(cs); setLinks(lnks); setInvitations(invs);
+        })
         .catch(() => { if (active) { setWorkouts([]); setCheckins([]); showToast('Could not load your data'); } })
         .finally(() => { if (active) setLoading(false); });
       return () => { active = false; };
@@ -1638,8 +1646,31 @@ function AthleteApp({ currentUser, demoAthleteId, realAthlete, auditLog, recordA
     setLoading(false);
   }, [demoAthleteId, isRealAthlete, realAthlete]);
 
+  // Accept a practitioner's invitation (M5). Creates the real link server-side,
+  // then refreshes who-has-access and clears the accepted invite.
+  const acceptInvitation = async (invitationId) => {
+    try {
+      await InvitationsData.acceptInvitation(invitationId);
+      const [lnks, invs] = await Promise.all([
+        LinksData.listAthleteLinks(realAthlete.id),
+        InvitationsData.listMyInvitations(),
+      ]);
+      setLinks(lnks);
+      setInvitations(invs);
+      showToast('Invitation accepted');
+    } catch (e) {
+      console.error('acceptInvitation', e);
+      showToast('Could not accept invitation');
+    }
+  };
+
   // Athlete-initiated invitation — creates an active or pending link for THIS athlete
   const createLink = (invite) => {
+    // Athlete-initiated invites are M5.5; a real athlete can't create in-memory links.
+    if (isRealAthlete) {
+      showToast('Inviting from your side is coming soon');
+      return;
+    }
     const myAthleteId = realAthlete?.id || demoAthleteId || currentUser?.athleteId;
     if (!myAthleteId) return;
     const seed = getSeedData();
@@ -1668,7 +1699,20 @@ function AthleteApp({ currentUser, demoAthleteId, realAthlete, auditLog, recordA
     return newLink;
   };
 
-  const revokeLink = (linkId) => {
+  const revokeLink = async (linkId) => {
+    if (isRealAthlete) {
+      try {
+        await LinksData.revokeLink(linkId);
+        setLinks(prev => prev.map(l =>
+          l.id === linkId ? { ...l, status: 'revoked', revokedAt: new Date().toISOString() } : l
+        ));
+        showToast('Access revoked');
+      } catch (e) {
+        console.error('revokeLink', e);
+        showToast('Could not revoke access');
+      }
+      return;
+    }
     setLinks(links.map(l =>
       l.id === linkId
         ? { ...l, status: 'revoked', revokedAt: new Date().toISOString() }
@@ -1926,6 +1970,41 @@ function AthleteApp({ currentUser, demoAthleteId, realAthlete, auditLog, recordA
                 <div style={styles.dualModeBtnSub}>{currentUser.title || ROLE_LABELS[currentUser.role]}</div>
               </div>
             </button>
+          </div>
+        )}
+
+        {/* Pending invitations from practitioners (M5) */}
+        {invitations.length > 0 && (
+          <div style={{ padding: '0 20px', marginTop: 8 }}>
+            {invitations.map(inv => (
+              <div key={inv.id} style={{
+                background: '#f5f0e4', border: '1px solid #d8ceb8', borderRadius: 14,
+                padding: 16, marginBottom: 10,
+              }}>
+                <div style={{ fontSize: 15, fontWeight: 600 }}>
+                  {inv.inviterName}{inv.inviterTitle ? ` · ${inv.inviterTitle}` : ''} wants to work with you
+                </div>
+                <div style={{ fontSize: 13, opacity: 0.65, marginTop: 4 }}>
+                  As your {ROLE_LABELS[inv.role] || inv.role}. They&apos;ll see your data according to
+                  the access you grant by accepting.
+                </div>
+                {inv.message && (
+                  <div style={{ fontSize: 13, fontStyle: 'italic', opacity: 0.7, marginTop: 6 }}>
+                    “{inv.message}”
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+                  <button onClick={() => acceptInvitation(inv.id)}
+                    style={{ ...styles.primaryBtn, flex: 1 }}>
+                    Accept
+                  </button>
+                  <button onClick={() => setInvitations(prev => prev.filter(i => i.id !== inv.id))}
+                    style={{ ...styles.linkBtn }}>
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
 
@@ -2210,6 +2289,18 @@ function AthleteApp({ currentUser, demoAthleteId, realAthlete, auditLog, recordA
 
   // ---- PRIVACY & ACCESS ----
   if (view === 'privacy') {
+    // Real athletes get a focused, DB-backed "who has access" view (M5). The full
+    // seed-coupled AthletePrivacy (contact sharing etc.) stays for demo personas;
+    // its remaining pieces migrate in later milestones.
+    if (isRealAthlete) {
+      return (
+        <AthleteAccessView
+          links={links}
+          onRevokeLink={revokeLink}
+          onBack={() => setView('home')}
+        />
+      );
+    }
     return (
       <AthletePrivacy
         athleteId={demoAthleteId}
@@ -3542,6 +3633,77 @@ function AthleteFiles({ files, onSave, onToggleShared, onDelete, onBack }) {
 
 // ============================================================
 // AthletePrivacy — consent + audit log for athletes
+// ============================================================
+// ============================================================
+// AthleteAccessView (M5) — real athlete's "who has access" list, DB-backed.
+// Shows active practitioner links with a plain-language permission summary and a
+// revoke control. Athlete-initiated invites (and contact-sharing controls) are
+// deferred to M5.5 / later milestones.
+// ============================================================
+function AthleteAccessView({ links, onRevokeLink, onBack }) {
+  const [confirmRevoke, setConfirmRevoke] = useState(null);
+
+  const active = (links || []).filter(l => l.role !== 'self' && l.status === 'active');
+
+  const PERM_LABELS = {
+    view_basic: 'Profile', view_workouts: 'Training', view_wellness: 'Wellness',
+    view_injuries: 'Injuries', view_medical: 'Medical', view_gps: 'GPS/HR',
+    view_notes: 'Notes', view_reports: 'Reports',
+  };
+  const grantSummary = (perms) =>
+    Object.keys(PERM_LABELS).filter(k => perms?.[k]).map(k => PERM_LABELS[k]).join(' · ') || 'Profile';
+
+  return (
+    <div style={styles.athleteFrame}>
+      <SubHeader title="Who has access" onBack={onBack} />
+      <div style={styles.aBody}>
+        <p style={styles.aFilesIntro}>
+          These people can see your data. You can remove anyone at any time —
+          access stops the next time they open the app.
+        </p>
+
+        {active.length === 0 ? (
+          <div style={{ opacity: 0.6, fontSize: 14, padding: '20px 0' }}>
+            No one has access yet. When a coach or physio invites you, you&apos;ll see
+            it on your home screen.
+          </div>
+        ) : (
+          active.map(link => (
+            <div key={link.id} style={{
+              padding: '14px 16px', borderRadius: 12, border: '1px solid #e4ddcf',
+              background: '#fff', marginBottom: 10,
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 15 }}>
+                    {link.resolvedName || link.invitedEmail || 'Linked user'}
+                  </div>
+                  <div style={{ fontSize: 13, opacity: 0.6 }}>
+                    {link.resolvedTitle || ROLE_LABELS[link.role] || link.role}
+                  </div>
+                </div>
+                {confirmRevoke === link.id ? (
+                  <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                    <button onClick={() => { onRevokeLink(link.id); setConfirmRevoke(null); }}
+                      style={{ ...styles.linkBtn, color: '#c8472b' }}>Confirm</button>
+                    <button onClick={() => setConfirmRevoke(null)} style={styles.linkBtn}>Cancel</button>
+                  </div>
+                ) : (
+                  <button onClick={() => setConfirmRevoke(link.id)}
+                    style={{ ...styles.linkBtn, color: '#c8472b', flexShrink: 0 }}>Remove</button>
+                )}
+              </div>
+              <div style={{ fontSize: 12, opacity: 0.55, marginTop: 8 }}>
+                Can see: {grantSummary(link.permissions)}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ============================================================
 function AthletePrivacy({ athleteId, currentUser, auditLog, links, onCreateLink, onRevokeLink, onBack }) {
   const [users, setUsers] = useState([]);
@@ -5298,7 +5460,133 @@ function Toast({ msg }) {
 // ============================================================
 // PRACTITIONER DASHBOARD
 // ============================================================
-function PractitionerApp({ currentUser, auditLog, recordAudit, onSwitchView, onOpenSwitcher, onLogout }) {
+// ============================================================
+// Practitioner → athlete invite (M5). Practitioner enters the athlete's email
+// and picks a role; permissions come from PERM_TEMPLATES[role]. Creates a pending
+// invitation the athlete accepts on their side.
+// ============================================================
+function PractitionerInviteAthlete({ sentInvitations, onInvite, onCancelInvitation, onBack, toast }) {
+  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+  const [role, setRole] = useState('sc_coach');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  const roleOptions = [
+    { k: 'sc_coach', l: 'S&C Coach', desc: 'Training data, can edit workouts.' },
+    { k: 'physio', l: 'Physio', desc: 'Medical, injuries.' },
+    { k: 'head_coach', l: 'Head Coach', desc: 'Training data, no medical.' },
+    { k: 'consultant', l: 'Consultant', desc: 'Read access.' },
+  ];
+
+  const PERM_LABELS = {
+    view_basic: 'Profile', view_workouts: 'Training', view_wellness: 'Wellness',
+    view_injuries: 'Injuries', view_medical: 'Medical', view_gps: 'GPS/HR',
+    view_notes: 'Notes', view_reports: 'Reports', edit_workouts: 'Edit workouts',
+    edit_injuries: 'Edit injuries', edit_notes: 'Leave notes',
+  };
+  // Canonical per-role permission templates (snake_case keys match the RLS perms).
+  const PERM_TEMPLATES = getSeedData().PERM_TEMPLATES || {};
+  const perms = PERM_TEMPLATES[role] || {};
+  const grantedLabels = Object.keys(PERM_LABELS).filter(k => perms[k]).map(k => PERM_LABELS[k]);
+
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+
+  const submit = async (e) => {
+    e?.preventDefault?.();
+    setError(null);
+    if (!emailValid) { setError('Enter a valid email address.'); return; }
+    setBusy(true);
+    const ok = await onInvite({
+      email: email.trim(),
+      role,
+      permissions: { ...perms },
+      athleteName: name.trim() || null,
+    });
+    setBusy(false);
+    if (ok) { setEmail(''); setName(''); }
+  };
+
+  return (
+    <div style={styles.athleteFrame}>
+      <SubHeader title="Invite an athlete" onBack={onBack} />
+      <div style={styles.aBody}>
+        <p style={styles.aFilesIntro}>
+          Enter the athlete's email and choose your role. They'll get an invitation
+          to accept when they sign in — nothing is shared until they accept.
+        </p>
+
+        <form onSubmit={submit}>
+          <div style={styles.loginField}>
+            <label style={styles.loginLabel}>Athlete's email</label>
+            <input type="email" style={styles.loginInput} value={email}
+              onChange={e => setEmail(e.target.value)} placeholder="athlete@example.com" />
+          </div>
+          <div style={styles.loginField}>
+            <label style={styles.loginLabel}>Their name <span style={{ opacity: 0.5 }}>(optional)</span></label>
+            <input style={styles.loginInput} value={name}
+              onChange={e => setName(e.target.value)} placeholder="e.g. Jethro" />
+          </div>
+
+          <div style={{ ...styles.loginLabel, marginTop: 14, marginBottom: 8 }}>Your role</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {roleOptions.map(r => (
+              <button type="button" key={r.k} onClick={() => setRole(r.k)}
+                style={{
+                  textAlign: 'left', padding: '12px 14px', borderRadius: 12,
+                  border: role === r.k ? '2px solid #c8b894' : '1px solid #e4ddcf',
+                  background: role === r.k ? '#f5f0e4' : '#fff', cursor: 'pointer',
+                }}>
+                <div style={{ fontWeight: 600, fontSize: 15 }}>{r.l}</div>
+                <div style={{ fontSize: 13, opacity: 0.6 }}>{r.desc}</div>
+              </button>
+            ))}
+          </div>
+
+          <div style={{ fontSize: 13, opacity: 0.7, marginTop: 14 }}>
+            They'll share with you: {grantedLabels.join(' · ') || 'basic profile'}
+          </div>
+
+          {error && <div style={styles.loginError}>{error}</div>}
+
+          <button type="submit" disabled={!emailValid || busy}
+            style={{ ...styles.primaryBtn, marginTop: 16, opacity: (!emailValid || busy) ? 0.4 : 1 }}>
+            {busy ? 'Sending…' : 'Send invitation'}
+          </button>
+        </form>
+
+        {sentInvitations.length > 0 && (
+          <div style={{ marginTop: 28 }}>
+            <div style={{ ...styles.loginLabel, marginBottom: 10 }}>Pending invitations</div>
+            {sentInvitations.map(inv => (
+              <div key={inv.id} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '12px 14px', borderRadius: 12, border: '1px solid #e4ddcf',
+                background: '#fff', marginBottom: 8,
+              }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>
+                    {inv.athleteName || inv.invitedEmail}
+                  </div>
+                  <div style={{ fontSize: 12, opacity: 0.6 }}>
+                    {inv.invitedEmail} · {ROLE_LABELS[inv.role] || inv.role} · pending
+                  </div>
+                </div>
+                <button onClick={() => onCancelInvitation(inv.id)}
+                  style={{ ...styles.linkBtn, color: '#c8472b', flexShrink: 0 }}>
+                  Cancel
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      {toast && <div style={styles.toast}>{toast}</div>}
+    </div>
+  );
+}
+
+function PractitionerApp({ currentUser, isRealPractitioner, auditLog, recordAudit, onSwitchView, onOpenSwitcher, onLogout }) {
   const [athletes, setAthletes] = useState([]);
   const [workouts, setWorkouts] = useState([]);
   const [checkins, setCheckins] = useState([]);
@@ -5309,6 +5597,9 @@ function PractitionerApp({ currentUser, auditLog, recordAudit, onSwitchView, onO
   const [concussionIncidents, setConcussionIncidents] = useState([]);
   const [files, setFiles] = useState([]);
   const [links, setLinks] = useState([]);
+  const [sentInvitations, setSentInvitations] = useState([]); // real practitioner's pending invites (M5)
+  const [showInviteAthlete, setShowInviteAthlete] = useState(false);
+  const [toast, setToast] = useState(null);
   const [selectedAthlete, setSelectedAthlete] = useState(null);
   const [filter, setFilter] = useState('all'); // all | flagged | injured | missing
   const [searchQuery, setSearchQuery] = useState('');
@@ -5317,7 +5608,44 @@ function PractitionerApp({ currentUser, auditLog, recordAudit, onSwitchView, onO
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2200); };
+
   useEffect(() => {
+    if (isRealPractitioner) {
+      // Real DB-backed practitioner (M5). Roster + permissions come from the
+      // athlete_user_links this user has; workouts/wellness load via RLS. The
+      // other domains (notes, injuries, tests, files) stay empty until their
+      // milestones migrate them (M6+).
+      let active = true;
+      (async () => {
+        try {
+          const roster = await LinksData.listMyAthletes(currentUser.id);
+          const ath = roster.map(r => r.athlete);
+          const lnks = roster.map(r => r.link);
+          const ids = ath.map(a => a.id);
+          const [ws, cs, sent] = await Promise.all([
+            WorkoutsData.listWorkoutsForAthletes(ids),
+            WellnessData.listWellnessForAthletes(ids),
+            InvitationsData.listSentInvitations(currentUser.id),
+          ]);
+          if (!active) return;
+          setAthletes(ath);
+          setLinks(lnks);
+          setWorkouts(ws);
+          setCheckins(cs);
+          setSentInvitations(sent);
+          setNotes([]); setInjuries([]); setTests([]);
+          setConcussionBaselines([]); setConcussionIncidents([]); setFiles([]);
+        } catch (e) {
+          console.error('practitioner load', e);
+          if (active) showToast('Could not load your caseload');
+        } finally {
+          if (active) setLoading(false);
+        }
+      })();
+      return () => { active = false; };
+    }
+
     const seed = getSeedData();
     setAthletes(seed.teamAthletes);
     setWorkouts(seed.teamWorkouts);
@@ -5330,7 +5658,32 @@ function PractitionerApp({ currentUser, auditLog, recordAudit, onSwitchView, onO
     setFiles(seed.teamFiles || []);
     setLinks(seed.teamAthleteLinks || []);
     setLoading(false);
-  }, []);
+  }, [isRealPractitioner, currentUser?.id]);
+
+  // Invite an athlete by email (M5, real practitioner only).
+  const inviteAthlete = async (input) => {
+    try {
+      const inv = await InvitationsData.createInvitation(input, currentUser.id);
+      setSentInvitations(prev => [inv, ...prev]);
+      showToast('Invitation sent');
+      return true;
+    } catch (e) {
+      console.error('inviteAthlete', e);
+      showToast('Could not send invitation');
+      return false;
+    }
+  };
+
+  const cancelInvitation = async (id) => {
+    try {
+      await InvitationsData.revokeInvitation(id);
+      setSentInvitations(prev => prev.filter(i => i.id !== id));
+      showToast('Invitation cancelled');
+    } catch (e) {
+      console.error('cancelInvitation', e);
+      showToast('Could not cancel invitation');
+    }
+  };
 
   // Filter athletes to only those the current user can access
   const accessibleIds = accessibleAthleteIds(currentUser, links);
@@ -5655,6 +6008,18 @@ function PractitionerApp({ currentUser, auditLog, recordAudit, onSwitchView, onO
     );
   }
 
+  if (showInviteAthlete) {
+    return (
+      <PractitionerInviteAthlete
+        sentInvitations={sentInvitations}
+        onInvite={inviteAthlete}
+        onCancelInvitation={cancelInvitation}
+        onBack={() => setShowInviteAthlete(false)}
+        toast={toast}
+      />
+    );
+  }
+
   if (selectedAthlete) {
     const row = rows.find(r => r.athlete.id === selectedAthlete);
     if (row) return (
@@ -5692,9 +6057,11 @@ function PractitionerApp({ currentUser, auditLog, recordAudit, onSwitchView, onO
           onLogout={onLogout}
           onPrivacy={() => setShowPrivacy(true)}
           onInvite={
-            currentUser?.role === 'club_admin'
-              ? () => setShowTeamAccess(true)
-              : null
+            isRealPractitioner
+              ? () => setShowInviteAthlete(true)
+              : currentUser?.role === 'club_admin'
+                ? () => setShowTeamAccess(true)
+                : null
           }
         />
       </header>
@@ -11117,7 +11484,9 @@ export default function App() {
   // Used by the in-app IdentitySwitcher to switch which demo identity drives the
   // body within an active session. Auth is unchanged — this is view/identity only.
   const handleLogin = (user) => {
-    setCurrentUser(user);
+    // Identity picked from the demo IdentitySwitcher — tag it so the app routes it
+    // to seed data, not the DB (real users come from realUserFromSession, no isDemo).
+    setCurrentUser({ ...user, isDemo: true });
     if (user.isStaff) {
       setMode('practitioner');
     } else {
@@ -11188,6 +11557,8 @@ export default function App() {
   const demoAthleteId = currentUser.role === 'athlete' ? currentUser.athleteId : null;
   // A real athlete-role user with no demo persona id is DB-backed (M3).
   const isRealAthlete = currentUser.role === 'athlete' && !currentUser.athleteId;
+  // A real staff user (from the session, not the demo switcher) is DB-backed (M5).
+  const isRealPractitioner = currentUser.isStaff && !currentUser.isDemo;
 
   return (
     <div style={styles.root}>
@@ -11225,6 +11596,7 @@ export default function App() {
       {mode === 'practitioner' && (
         <PractitionerApp
           currentUser={currentUser}
+          isRealPractitioner={isRealPractitioner}
           auditLog={auditLog}
           recordAudit={recordAudit}
           onSwitchView={() => setMode('athlete')}

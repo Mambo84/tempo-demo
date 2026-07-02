@@ -56,6 +56,19 @@ export async function listWellness(athleteId) {
   return (data || []).map(rowToCheckin);
 }
 
+// Check-ins for several athletes at once (practitioner roster summaries). RLS
+// filters to those the caller may view (view_wellness).
+export async function listWellnessForAthletes(athleteIds) {
+  if (!athleteIds || !athleteIds.length) return [];
+  const { data, error } = await supabase
+    .from('wellness_checkins')
+    .select('*')
+    .in('athlete_id', athleteIds)
+    .order('date', { ascending: false });
+  if (error) throw error;
+  return (data || []).map(rowToCheckin);
+}
+
 // Create or replace today's check-in (upsert on the athlete_id+date unique key).
 export async function saveWellness(athleteId, checkin) {
   const row = { ...checkinToRow(checkin), athlete_id: athleteId };
