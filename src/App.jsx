@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Activity, Users, ChevronRight, Plus, Check, AlertCircle, TrendingUp, TrendingDown, Minus, X, ArrowLeft, FileText, Filter } from 'lucide-react';
 import { signUp, signInWithPassword, signOut, getSession, onAuthStateChange } from './lib/auth';
+import { getMyAthlete, createAthlete, updateWellnessSettings } from './lib/data/athletes';
+import * as WorkoutsData from './lib/data/workouts';
+import * as WellnessData from './lib/data/wellness';
 
 // ============================================================
 // Demo configuration
@@ -1549,7 +1552,11 @@ const Bars = ({ data, max, height = 60 }) => {
 // ============================================================
 // ATHLETE APP
 // ============================================================
-function AthleteApp({ currentUser, demoAthleteId, auditLog, recordAudit, onSwitchView, onOpenSwitcher, onLogout }) {
+function AthleteApp({ currentUser, demoAthleteId, realAthlete, auditLog, recordAudit, onSwitchView, onOpenSwitcher, onLogout }) {
+  // The athlete this app instance is driving. For a real logged-in athlete this
+  // is their DB id (workouts read/write to Supabase, M3); for a demo persona it's
+  // the seed id (in-memory). `isRealAthlete` gates the DB path.
+  const isRealAthlete = !!realAthlete;
   const [view, setView] = useState('home'); // home | logWorkout | wellness | rpePrompt | history | files | editWorkout
   const [editingWorkout, setEditingWorkout] = useState(null);
   const [workouts, setWorkouts] = useState([]);
@@ -1573,10 +1580,36 @@ function AthleteApp({ currentUser, demoAthleteId, auditLog, recordAudit, onSwitc
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
 
+  const showToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2200);
+  };
+
   useEffect(() => {
     setLoading(true);
     const seed = getSeedData();
     setLinks(seed.teamAthleteLinks || []);
+
+    if (isRealAthlete) {
+      // Real DB-backed athlete. Workouts (M3) + wellness (M4) come from Supabase;
+      // the remaining domains (files, injuries, notes) stay empty/in-memory until
+      // their own milestones migrate them (M10, M7, M6).
+      setDemoAthlete(realAthlete);
+      if (realAthlete.wellnessSettings) setWellnessSettings(realAthlete.wellnessSettings);
+      setFiles([]);
+      setInjuries([]);
+      setCoordinationNotes([]);
+      let active = true;
+      Promise.all([
+        WorkoutsData.listWorkouts(realAthlete.id),
+        WellnessData.listWellness(realAthlete.id),
+      ])
+        .then(([ws, cs]) => { if (active) { setWorkouts(ws); setCheckins(cs); } })
+        .catch(() => { if (active) { setWorkouts([]); setCheckins([]); showToast('Could not load your data'); } })
+        .finally(() => { if (active) setLoading(false); });
+      return () => { active = false; };
+    }
+
     if (demoAthleteId) {
       setWorkouts(seed.teamWorkouts.filter(w => w.athleteId === demoAthleteId));
       setCheckins(seed.teamWellness.filter(c => c.athleteId === demoAthleteId));
@@ -1603,11 +1636,11 @@ function AthleteApp({ currentUser, demoAthleteId, auditLog, recordAudit, onSwitc
       setDemoAthlete(null);
     }
     setLoading(false);
-  }, [demoAthleteId]);
+  }, [demoAthleteId, isRealAthlete, realAthlete]);
 
   // Athlete-initiated invitation — creates an active or pending link for THIS athlete
   const createLink = (invite) => {
-    const myAthleteId = demoAthleteId || currentUser?.athleteId;
+    const myAthleteId = realAthlete?.id || demoAthleteId || currentUser?.athleteId;
     if (!myAthleteId) return;
     const seed = getSeedData();
     const allUsers = seed.teamUsers || [];
@@ -1644,25 +1677,47 @@ function AthleteApp({ currentUser, demoAthleteId, auditLog, recordAudit, onSwitc
     showToast('Access revoked');
   };
 
-  const showToast = (msg) => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 2200);
-  };
-
-  const saveWorkout = (w) => {
+  const saveWorkout = async (w) => {
+    if (isRealAthlete) {
+      try {
+        if (w.id) {
+          const updated = await WorkoutsData.updateWorkout(w.id, w);
+          setWorkouts(prev => prev.map(x => (x.id === updated.id ? updated : x)));
+          showToast('Session updated');
+        } else {
+          const created = await WorkoutsData.createWorkout(realAthlete.id, w, currentUser?.id);
+          setWorkouts(prev => [...prev, created]);
+          showToast(w.date === today() ? 'Session logged' : 'Past session added');
+        }
+      } catch (e) {
+        console.error('saveWorkout', e);
+        showToast('Could not save session');
+      }
+      return;
+    }
+    // Demo / in-memory path
     if (w.id) {
-      // Editing existing workout
       setWorkouts(workouts.map(x => x.id === w.id ? { ...x, ...w } : x));
       showToast('Session updated');
     } else {
-      // New workout
       const newEntry = { ...w, id: `w_${Date.now()}` };
       setWorkouts([...workouts, newEntry]);
       showToast(w.date === today() ? 'Session logged' : 'Past session added');
     }
   };
 
-  const deleteWorkout = (id) => {
+  const deleteWorkout = async (id) => {
+    if (isRealAthlete) {
+      try {
+        await WorkoutsData.deleteWorkout(id);
+        setWorkouts(prev => prev.filter(w => w.id !== id));
+        showToast('Session deleted');
+      } catch (e) {
+        console.error('deleteWorkout', e);
+        showToast('Could not delete session');
+      }
+      return;
+    }
     setWorkouts(workouts.filter(w => w.id !== id));
     showToast('Session deleted');
   };
@@ -1673,7 +1728,7 @@ function AthleteApp({ currentUser, demoAthleteId, auditLog, recordAudit, onSwitc
       setInjuries(injuries.map(x => x.id === inj.id ? { ...x, ...inj } : x));
       showToast('Injury updated');
     } else {
-      const myAthleteId = demoAthleteId || currentUser?.athleteId;
+      const myAthleteId = realAthlete?.id || demoAthleteId || currentUser?.athleteId;
       const newEntry = {
         ...inj,
         id: `inj_${Date.now()}`,
@@ -1702,7 +1757,19 @@ function AthleteApp({ currentUser, demoAthleteId, auditLog, recordAudit, onSwitc
     setInjuries(injuries.map(i => i.id === id ? { ...i, ...patch } : i));
   };
 
-  const saveCheckin = (c) => {
+  const saveCheckin = async (c) => {
+    if (isRealAthlete) {
+      try {
+        const saved = await WellnessData.saveWellness(realAthlete.id, c);
+        setCheckins(prev => [...prev.filter(x => x.date !== saved.date), saved]);
+        showToast('Check-in saved');
+      } catch (e) {
+        console.error('saveCheckin', e);
+        showToast('Could not save check-in');
+      }
+      return;
+    }
+    // Demo / in-memory path — replace any same-date entry
     const newEntry = { ...c, id: `c_${Date.now()}` };
     const filtered = checkins.filter(x => x.date !== c.date);
     setCheckins([...filtered, newEntry]);
@@ -2161,9 +2228,19 @@ function AthleteApp({ currentUser, demoAthleteId, auditLog, recordAudit, onSwitc
     return (
       <AthleteSettings
         settings={wellnessSettings}
-        onChange={(s) => {
-          setWellnessSettings(s);
-          // Mirror to seed so the practitioner side reflects the athlete's choice
+        onChange={async (s) => {
+          setWellnessSettings(s); // optimistic — keep the UI responsive per toggle
+          if (isRealAthlete) {
+            try {
+              await updateWellnessSettings(realAthlete.id, s);
+              showToast('Settings saved');
+            } catch (e) {
+              console.error('updateWellnessSettings', e);
+              showToast('Could not save settings');
+            }
+            return;
+          }
+          // Demo: mirror to seed so the practitioner side reflects the choice
           if (demoAthleteId) {
             const seed = getSeedData();
             const idx = seed.teamAthletes.findIndex(a => a.id === demoAthleteId);
@@ -10842,6 +10919,96 @@ function FeedbackWidget({ currentUser }) {
 
 
 // ============================================================
+// Athlete profile setup — shown to a real athlete-role user on first login,
+// before they have an `athletes` row (M3). Creates the profile + self link.
+// Kept intentionally short (name, position, sport required) to stay calm;
+// fuller profile detail is editable later in the app.
+// ============================================================
+function AthleteProfileSetup({ currentUser, onCreated, onLogout }) {
+  const [name, setName] = useState(currentUser?.name || '');
+  const [position, setPosition] = useState('');
+  const [sport, setSport] = useState('');
+  const [team, setTeam] = useState('');
+  const [squad, setSquad] = useState('');
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const canSave = name.trim() && position.trim() && sport.trim();
+
+  const handleSubmit = async (e) => {
+    e?.preventDefault?.();
+    setError(null);
+    if (!canSave) { setError('Name, position and sport are required.'); return; }
+    setBusy(true);
+    try {
+      const athlete = await createAthlete(
+        { displayName: name, position, sport, team, squad },
+        currentUser.id
+      );
+      onCreated(athlete);
+    } catch (err) {
+      console.error('createAthlete', err);
+      setError('Could not create your profile. Please try again.');
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={styles.loginFrame}>
+      <div style={styles.loginInner}>
+        <div style={styles.loginMark}>◐</div>
+        <div style={styles.loginBrand}>tempo</div>
+        <div style={styles.loginTagline}>Set up your athlete profile</div>
+
+        <form onSubmit={handleSubmit} style={styles.loginForm}>
+          <div style={styles.loginField}>
+            <label style={styles.loginLabel}>Name</label>
+            <input style={styles.loginInput} value={name}
+              onChange={e => setName(e.target.value)} placeholder="Your name" />
+          </div>
+          <div style={styles.loginField}>
+            <label style={styles.loginLabel}>Position</label>
+            <input style={styles.loginInput} value={position}
+              onChange={e => setPosition(e.target.value)} placeholder="e.g. Forward" />
+          </div>
+          <div style={styles.loginField}>
+            <label style={styles.loginLabel}>Sport</label>
+            <input style={styles.loginInput} value={sport}
+              onChange={e => setSport(e.target.value)} placeholder="e.g. Football" />
+          </div>
+          <div style={styles.loginField}>
+            <label style={styles.loginLabel}>Team <span style={{ opacity: 0.5 }}>(optional)</span></label>
+            <input style={styles.loginInput} value={team}
+              onChange={e => setTeam(e.target.value)} placeholder="e.g. Marlborough FC" />
+          </div>
+          <div style={styles.loginField}>
+            <label style={styles.loginLabel}>Squad <span style={{ opacity: 0.5 }}>(optional)</span></label>
+            <input style={styles.loginInput} value={squad}
+              onChange={e => setSquad(e.target.value)} placeholder="e.g. Seniors" />
+          </div>
+
+          {error && <div style={styles.loginError}>{error}</div>}
+
+          <button type="submit"
+            style={{ ...styles.loginSubmit, opacity: (!canSave || busy) ? 0.6 : 1 }}
+            disabled={!canSave || busy}>
+            {busy ? 'Creating…' : 'Create profile'}
+          </button>
+
+          <div style={styles.loginLinks}>
+            <a style={styles.loginLink} onClick={onLogout}>Log out</a>
+          </div>
+        </form>
+
+        <div style={styles.loginFoot}>
+          This is your own athlete profile. You can add more detail later.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // ROOT
 // ============================================================
 export default function App() {
@@ -10852,6 +11019,10 @@ export default function App() {
   const [session, setSession] = useState(null);   // real Supabase session (gates the app)
   const [authChecked, setAuthChecked] = useState(false); // session resolved on load yet?
   const [auditLog, setAuditLog] = useState([]);
+  // Real athlete's own DB profile (M3). Resolved for athlete-role users who came
+  // from a real session (i.e. no demo persona athleteId). null = none yet → setup.
+  const [myAthlete, setMyAthlete] = useState(null);
+  const [athleteChecked, setAthleteChecked] = useState(false);
 
   // Build the current-user object from the REAL authenticated session. Sign-up
   // stores display_name / default_role / title in the auth user's metadata, so we
@@ -10920,6 +11091,24 @@ export default function App() {
     });
     return () => { active = false; sub?.subscription?.unsubscribe(); };
   }, []);
+
+  // Resolve the real athlete's own profile once identity is known. Skipped for
+  // staff and for demo personas (which carry a seed athleteId and stay in-memory).
+  useEffect(() => {
+    const u = currentUser;
+    const isRealAthlete = !!u && u.role === 'athlete' && !u.athleteId;
+    if (!isRealAthlete) {
+      setMyAthlete(null);
+      setAthleteChecked(true);
+      return;
+    }
+    let active = true;
+    setAthleteChecked(false);
+    getMyAthlete(u.id)
+      .then(a => { if (active) { setMyAthlete(a); setAthleteChecked(true); } })
+      .catch(() => { if (active) { setMyAthlete(null); setAthleteChecked(true); } });
+    return () => { active = false; };
+  }, [currentUser?.id, currentUser?.role, currentUser?.athleteId]);
 
   const dismissIntro = () => {
     setIntroSeen(true);
@@ -10997,6 +11186,8 @@ export default function App() {
   // (only relevant if currentUser.role === 'athlete'). The switcher also
   // lets staff users jump between roles to see how access changes.
   const demoAthleteId = currentUser.role === 'athlete' ? currentUser.athleteId : null;
+  // A real athlete-role user with no demo persona id is DB-backed (M3).
+  const isRealAthlete = currentUser.role === 'athlete' && !currentUser.athleteId;
 
   return (
     <div style={styles.root}>
@@ -11008,10 +11199,22 @@ export default function App() {
           onClose={() => setShowSwitcher(false)}
         />
       )}
-      {mode === 'athlete' && (
+      {mode === 'athlete' && isRealAthlete && !athleteChecked && (
+        // Resolving the real athlete's profile — brief blank to avoid a flash.
+        <div style={styles.root} />
+      )}
+      {mode === 'athlete' && isRealAthlete && athleteChecked && !myAthlete && (
+        <AthleteProfileSetup
+          currentUser={currentUser}
+          onCreated={(athlete) => setMyAthlete(athlete)}
+          onLogout={handleLogout}
+        />
+      )}
+      {mode === 'athlete' && (!isRealAthlete || (athleteChecked && myAthlete)) && (
         <AthleteApp
           currentUser={currentUser}
           demoAthleteId={demoAthleteId}
+          realAthlete={isRealAthlete ? myAthlete : null}
           auditLog={auditLog}
           recordAudit={recordAudit}
           onSwitchView={() => currentUser.isStaff && setMode('practitioner')}
