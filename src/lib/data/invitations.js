@@ -15,6 +15,8 @@ export function rowToInvitation(row) {
     role: row.role,
     permissions: row.permissions || {},
     athleteName: row.athlete_name || null,
+    athleteId: row.athlete_id || null,
+    direction: row.direction || 'practitioner_to_athlete',
     message: row.message || null,
     status: row.status,
     expiresAt: row.expires_at || null,
@@ -23,7 +25,9 @@ export function rowToInvitation(row) {
   };
 }
 
-// Practitioner creates an invitation. inviterUserId must be the caller (auth.uid()).
+// Create an invitation. inviterUserId must be the caller (auth.uid()).
+// direction defaults to practitioner→athlete (M5); athlete→practitioner (M5.5)
+// passes direction:'athlete_to_practitioner' + athleteId (the athlete's own id).
 export async function createInvitation(input, inviterUserId) {
   const row = {
     inviter_user_id: inviterUserId,
@@ -33,6 +37,8 @@ export async function createInvitation(input, inviterUserId) {
     athlete_name: input.athleteName?.trim() || null,
     message: input.message?.trim() || null,
     expires_at: input.expiresAt || null,
+    direction: input.direction || 'practitioner_to_athlete',
+    athlete_id: input.athleteId || null,
   };
   const { data, error } = await supabase
     .from('invitations')
@@ -73,7 +79,7 @@ export async function listMyInvitations() {
   return (data || []).map((r) => ({
     id: r.invitation_id,
     inviterUserId: r.inviter_user_id,
-    inviterName: r.inviter_name || 'A practitioner',
+    inviterName: r.inviter_name || 'Someone',
     inviterTitle: r.inviter_title || '',
     role: r.role,
     permissions: r.permissions || {},
@@ -81,13 +87,18 @@ export async function listMyInvitations() {
     message: r.message || null,
     createdAt: r.created_at,
     expiresAt: r.expires_at || null,
+    direction: r.direction || 'practitioner_to_athlete',
   }));
 }
 
-// The invited athlete accepts. Returns the athlete_id the link was created on.
-export async function acceptInvitation(invitationId) {
+// Accept an invitation. p2a (M5): call with just the id. a2p (M5.5): the accepting
+// practitioner passes their chosen role + permissions (client-computed from
+// PERM_TEMPLATES). Returns the athlete_id the link was created on.
+export async function acceptInvitation(invitationId, role = null, permissions = null) {
   const { data, error } = await supabase.rpc('accept_invitation', {
     p_invitation_id: invitationId,
+    p_role: role,
+    p_permissions: permissions,
   });
   if (error) throw error;
   return data; // uuid (athlete_id)

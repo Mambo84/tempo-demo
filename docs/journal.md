@@ -14,6 +14,17 @@ Five lines per session: what shipped, what didn't, what's open, next step, brief
 
 ---
 
+## 2026-07-02 — Milestone 5.5: Athlete→practitioner invitations (complete)
+
+- **Shipped — server (`0011_athlete_invites.sql`):** `invitations` gains `direction` (p2a|a2p) + nullable `athlete_id` (FK, cascade); INSERT tightened so an athlete may only attach their own profile (`is_athlete_self`). Unified `accept_invitation(id, role?, perms?)` (dropped the M5 1-arg version) branches on direction — a2p: accepter = invited practitioner (grantee), link `athlete_id` from the invite, role/perms from the accept params. `list_my_invitations()` now returns `direction` + athlete name.
+- **Shipped — client:** `invitations.js` extended (direction/athleteId on create + mapper; `acceptInvitation(id, role, perms)`). Extracted module-level `STAFF_ROLE_OPTIONS`/`PERM_LABELS`/`permsForRole`/`grantedPermLabels` (single source, from seed `PERM_TEMPLATES`). Athlete: `AthleteAccessView` now has an **invite form** (email + suggested role + optional message, no perm toggles) + a sent-invites list with cancel. Practitioner: loads received a2p invites → roster **banner** → `PractitionerAcceptInvite` screen (role picker pre-filled from the athlete's suggestion, permission preview) → accept reloads the roster (`reloadNonce`). Build green; data file + App.jsx lint-clean (no new errors).
+- **Decisions (Brad):** permissions authority = (a) client computes from `PERM_TEMPLATES` on accept (single source, mirrors M5 p2a; athlete's review+revoke in `AthleteAccessView` is the consent backstop; server-side derivation rejected — no real threat model, avoids SQL template duplication). Suggested role pre-fills the practitioner's picker. Recorded as decisions 13–15 in `docs/schema.md`.
+- **Deferred:** decline persists nothing (local dismiss); athlete invite has no expiry UI; contact-sharing controls still not wired for real athletes; club-admin bulk invite demo-only. Carried ticket: `calc.wellnessAvg` divide-by-enabled.
+- **Verified:** All 5 M5.5 acceptance criteria pass live — athlete invite creates pending `direction=athlete_to_practitioner` → practitioner sees roster banner → accepts with pre-filled suggested role → both sides see the link → athlete revoke removes access on next fetch → M5 p2a direction still works end-to-end. `0011` run in the SQL Editor.
+- **Next:** **M6 — coordination notes (the cutover milestone).** Once M6 ships and is tested by Brad + athlete on real accounts, merge `backend-mvp` → `main`. Carry ticket: `calc.wellnessAvg` divide-by-enabled.
+
+---
+
 ## 2026-07-02 — Milestone 5: Practitioner→athlete linking (complete)
 
 - **Direction corrected mid-plan:** M5 is **practitioner→athlete** (practitioner invites an athlete by email), not athlete→practitioner (that's M5.5). This drove a schema decision: the invite can't live in `athlete_user_links` (NOT NULL `athlete_id`; the athlete may not exist yet; practitioner isn't an admin) → **Option A: a dedicated `invitations` table** (Brad approved; recorded in `docs/schema.md` decisions 7–12).

@@ -18,6 +18,7 @@ Migrations (run in order in the Supabase SQL Editor):
 | `0008_seed_dev.sql` | Dev-only seed (4 users, 1 athlete, links, workout, injury) |
 | `0009_verify_rls_dev.sql` | Dev-only RLS proof harness |
 | `0010_invitations.sql` | `invitations` table + RLS, `accept_invitation`/`list_my_invitations` RPCs, `shares_athlete_with`, broadened `profiles` SELECT, expiry enforcement in the four helpers (M5) |
+| `0011_athlete_invites.sql` | `invitations.direction` + `athlete_id`; unified `accept_invitation(id, role?, perms?)`; `list_my_invitations` returns direction + athlete name (M5.5) |
 
 ## File-split decision
 
@@ -125,6 +126,26 @@ sharing are built.
     — the practitioner's name comes from their profile post-accept, and `invited_by`
     marks the initiator. The `invitations` table has its own `athlete_name` /
     `message` display fields.
+
+## Decisions taken at M5.5 (Brad signed off)
+
+13. **Both invite directions share the `invitations` table**, tagged with
+    `direction` (`practitioner_to_athlete` | `athlete_to_practitioner`).
+    Athlete-initiated invites set `athlete_id` (the athlete has a profile from M3);
+    practitioner-initiated leave it null. INSERT is tightened so an athlete may
+    only attach their own profile (`athlete_id IS NULL OR is_athlete_self`).
+14. **`accept_invitation` branches on direction.** a2p: the accepting practitioner
+    is the grantee — link `athlete_id` from the invitation, `user_id = auth.uid()`,
+    role/permissions from the accept-time params. p2a (M5): unchanged.
+15. **a2p permissions authority = the practitioner, client-computed from
+    `PERM_TEMPLATES`** (Brad's call, option (a)). The athlete supplies only a
+    *suggested* role; the practitioner picks the actual role on accept and the
+    client passes `PERM_TEMPLATES[role]`. `PERM_TEMPLATES` stays the single source
+    (client-only) — mirrors M5 p2a. Consent backstop: the athlete sees exactly what
+    was granted in `AthleteAccessView` and can revoke. Server-side role→perms
+    derivation (defence-in-depth) was rejected for the pilot: no real threat model
+    for these users, and SQL duplication would risk divergence. Revisit later if a
+    real threat model emerges.
 
 ## Notable schema details
 
