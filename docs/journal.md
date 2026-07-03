@@ -14,6 +14,17 @@ Five lines per session: what shipped, what didn't, what's open, next step, brief
 
 ---
 
+## 2026-07-03 — Milestone 6 (Part 1): Coordination notes persistence (complete)
+
+- **Shipped — client (notes only, no cutover):** new data layer `src/lib/data/notes.js` (`rowToNote`/`noteToRow` mappers — `author_name`→`author`, `author_role`→`role`, `created_at`→`date`; `listNotes`, `listNotesForAthletes`, `createNote`, `acknowledgeNote`, `archiveNote`). Athlete `Promise.all` load gains `listNotes` (dropped the `setCoordinationNotes([])` placeholder); acknowledge/archive are now async — optimistic local update then persist for a real athlete (demo personas stay in-memory). Practitioner roster load replaces `setNotes([])` with `listNotesForAthletes(ids)`; `addNote` is async and calls `createNote` for a real practitioner. `CoordinationNotesPanel` + `NoteComposer` untouched. Build green; `notes.js` lint-clean; App.jsx error count unchanged at 51 (no new errors).
+- **No server changes:** M2's `0006_notes_and_files.sql` already provides the `notes` table + RLS (self sees `visibility='athlete'` only; others need `view_notes`, `medical` needs `view_medical`; insert gated on `author_user_id=auth.uid()` AND self/`edit_notes`; self/`edit_notes` can update → ack/archive). No migration needed for M6.
+- **One required new UI bit:** `pNoteCard` now shows "✓ Acknowledged · {date}" (green) or "Awaiting acknowledgement" (muted) for `visibility='athlete'` notes — needed for the "practitioner sees acknowledged status" criterion; the demo card had no ack indicator.
+- **Decisions (Brad, all three confirmed):** (1) no athlete-side composer — "both ways" = ack/archive flowing back (build athlete→staff messaging later only if pilot surfaces the need); (2) persist all three visibility levels now (composer + RLS already handle them; persisting only 'athlete' would be a silent-drop bug needing re-verification); (3) no archive-status badge on the practitioner side (note staying visible satisfies the criterion).
+- **Verified:** All M6 Part-1 acceptance criteria pass live — practitioner writes a note → athlete sees it on home → acknowledges → practitioner reloads and sees "✓ Acknowledged" → athlete archives (leaves athlete home, still visible to practitioner). Staff-only visibility respected (athlete does not see staff notes). DB rows confirmed in Supabase.
+- **Next: M6 Part 2 — the cutover.** Dedicated next session: merge `backend-mvp` → `main` (deliberately deferred, not done here). Then M7 — injuries (read). Carry ticket: `calc.wellnessAvg` divide-by-enabled.
+
+---
+
 ## 2026-07-02 — Milestone 5.5: Athlete→practitioner invitations (complete)
 
 - **Shipped — server (`0011_athlete_invites.sql`):** `invitations` gains `direction` (p2a|a2p) + nullable `athlete_id` (FK, cascade); INSERT tightened so an athlete may only attach their own profile (`is_athlete_self`). Unified `accept_invitation(id, role?, perms?)` (dropped the M5 1-arg version) branches on direction — a2p: accepter = invited practitioner (grantee), link `athlete_id` from the invite, role/perms from the accept params. `list_my_invitations()` now returns `direction` + athlete name.

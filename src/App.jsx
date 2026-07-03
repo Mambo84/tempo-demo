@@ -6,6 +6,7 @@ import * as WorkoutsData from './lib/data/workouts';
 import * as WellnessData from './lib/data/wellness';
 import * as InvitationsData from './lib/data/invitations';
 import * as LinksData from './lib/data/links';
+import * as NotesData from './lib/data/notes';
 
 // ============================================================
 // Demo configuration
@@ -1602,7 +1603,6 @@ function AthleteApp({ currentUser, demoAthleteId, realAthlete, auditLog, recordA
       if (realAthlete.wellnessSettings) setWellnessSettings(realAthlete.wellnessSettings);
       setFiles([]);
       setInjuries([]);
-      setCoordinationNotes([]);
       let active = true;
       Promise.all([
         WorkoutsData.listWorkouts(realAthlete.id),
@@ -1610,13 +1610,15 @@ function AthleteApp({ currentUser, demoAthleteId, realAthlete, auditLog, recordA
         LinksData.listAthleteLinks(realAthlete.id),      // who has access (M5)
         InvitationsData.listMyInvitations(),             // pending invites to accept (M5)
         InvitationsData.listSentInvitations(currentUser.id), // practitioners I've invited (M5.5)
+        NotesData.listNotes(realAthlete.id),             // coordination notes (M6); RLS returns athlete-visible only
       ])
-        .then(([ws, cs, lnks, invs, sent]) => {
+        .then(([ws, cs, lnks, invs, sent, notes]) => {
           if (!active) return;
           setWorkouts(ws); setCheckins(cs); setLinks(lnks);
           // Only p2a invites are addressed to the athlete; filter defensively.
           setInvitations(invs.filter(i => i.direction === 'practitioner_to_athlete'));
           setSentInvitations(sent.filter(i => i.direction === 'athlete_to_practitioner'));
+          setCoordinationNotes(notes);
         })
         .catch(() => { if (active) { setWorkouts([]); setCheckins([]); showToast('Could not load your data'); } })
         .finally(() => { if (active) setLoading(false); });
@@ -2165,16 +2167,25 @@ function AthleteApp({ currentUser, demoAthleteId, realAthlete, auditLog, recordA
         {coordinationNotes.filter(n => !n.archived).length > 0 && (
           <CoordinationNotesPanel
             notes={coordinationNotes.filter(n => !n.archived)}
-            onAcknowledge={(id) => {
+            onAcknowledge={async (id) => {
+              // Optimistic: reflect immediately, then persist for a real athlete.
               setCoordinationNotes(coordinationNotes.map(n =>
                 n.id === id ? { ...n, acknowledged: true, acknowledgedAt: new Date().toISOString() } : n
               ));
               showToast('Got it — staff notified');
+              if (isRealAthlete) {
+                try { await NotesData.acknowledgeNote(id); }
+                catch { showToast('Could not save — try again'); }
+              }
             }}
-            onArchive={(id) => {
+            onArchive={async (id) => {
               setCoordinationNotes(coordinationNotes.map(n =>
                 n.id === id ? { ...n, archived: true } : n
               ));
+              if (isRealAthlete) {
+                try { await NotesData.archiveNote(id); }
+                catch { showToast('Could not save — try again'); }
+              }
             }}
           />
         )}
@@ -5812,11 +5823,12 @@ function PractitionerApp({ currentUser, isRealPractitioner, auditLog, recordAudi
           const ath = roster.map(r => r.athlete);
           const lnks = roster.map(r => r.link);
           const ids = ath.map(a => a.id);
-          const [ws, cs, sent, received] = await Promise.all([
+          const [ws, cs, sent, received, notes] = await Promise.all([
             WorkoutsData.listWorkoutsForAthletes(ids),
             WellnessData.listWellnessForAthletes(ids),
             InvitationsData.listSentInvitations(currentUser.id),
             InvitationsData.listMyInvitations(),
+            NotesData.listNotesForAthletes(ids),           // coordination/staff/clinical notes (M6)
           ]);
           if (!active) return;
           setAthletes(ath);
@@ -5826,7 +5838,8 @@ function PractitionerApp({ currentUser, isRealPractitioner, auditLog, recordAudi
           setSentInvitations(sent);
           // Invitations addressed to this practitioner from athletes (M5.5).
           setReceivedInvitations(received.filter(i => i.direction === 'athlete_to_practitioner'));
-          setNotes([]); setInjuries([]); setTests([]);
+          setNotes(notes);
+          setInjuries([]); setTests([]);
           setConcussionBaselines([]); setConcussionIncidents([]); setFiles([]);
         } catch (e) {
           console.error('practitioner load', e);
@@ -6013,13 +6026,28 @@ function PractitionerApp({ currentUser, isRealPractitioner, auditLog, recordAudi
     setFiles([newF, ...files]);
   };
 
-  const addNote = (n) => {
+  const addNote = async (n) => {
+    const authorRole = currentUser?.title || ROLE_LABELS[currentUser?.role] || 'Staff';
+    if (isRealPractitioner) {
+      try {
+        const saved = await NotesData.createNote(
+          n.athleteId,
+          { text: n.text, visibility: n.visibility, type: n.type },
+          { id: currentUser?.id, name: currentUser?.name || 'Unknown', role: authorRole }
+        );
+        setNotes([saved, ...notes]);
+      } catch (e) {
+        console.error('createNote', e);
+        showToast('Could not save the note');
+      }
+      return;
+    }
     const newN = {
       ...n,
       id: `n_${Date.now()}`,
       date: today(),
       author: currentUser?.name || 'Unknown',
-      role: currentUser?.title || ROLE_LABELS[currentUser?.role] || 'Staff'
+      role: authorRole
     };
     setNotes([newN, ...notes]);
   };
@@ -9075,6 +9103,14 @@ function AthleteDetail({ row, notes, onAddNote, perfData, currentUser, links, re
                                   : n.visibility === 'medical' ? 'Medical-restricted'
                                   : 'Staff only'}
                     </div>
+                    {/* Ack status — only athlete-visible notes can be acknowledged (M6) */}
+                    {n.visibility === 'athlete' && (
+                      <div style={n.acknowledged ? styles.pNoteAck : styles.pNoteAckPending}>
+                        {n.acknowledged
+                          ? `✓ Acknowledged${n.acknowledgedAt ? ` · ${fmtDate(n.acknowledgedAt)}` : ''}`
+                          : 'Awaiting acknowledgement'}
+                      </div>
+                    )}
                   </div>
                 ));
               })()}
@@ -16301,5 +16337,7 @@ const styles = {
   pNoteAuthor: { fontSize: 12, color: '#1a1a1a', fontWeight: 500 },
   pNoteDate: { fontSize: 11, color: '#8a8275', marginLeft: 'auto' },
   pNoteText: { fontSize: 14, lineHeight: 1.5, margin: '4px 0 8px', color: '#1a1a1a' },
-  pNoteVis: { fontSize: 10, color: '#8a8275', letterSpacing: '0.06em', textTransform: 'uppercase' }
+  pNoteVis: { fontSize: 10, color: '#8a8275', letterSpacing: '0.06em', textTransform: 'uppercase' },
+  pNoteAck: { fontSize: 11, color: '#4a7c59', marginTop: 4, fontWeight: 500 },
+  pNoteAckPending: { fontSize: 11, color: '#8a8275', marginTop: 4 }
 };
