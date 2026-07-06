@@ -14,6 +14,16 @@ Five lines per session: what shipped, what didn't, what's open, next step, brief
 
 ---
 
+## 2026-07-07 — Milestone 6 (Part 2): Cutover to production (complete)
+
+- **Shipped:** Cut the backend over to production. Fast-forwarded `main` → `backend-mvp` (`bc65d5e..41882d6`, 8 commits, no merge commit, no conflicts) and pushed to `origin/main`, which triggered the Vercel Production build on `tempo-demo-mu.vercel.app`. `main` is now the real backend app; the in-memory demo is retired. No code changes this session — pure cutover.
+- **Pre-flight:** Confirmed `main` was the clean pre-backend demo base (`bc65d5e`) and a strict ancestor of `backend-mvp` (guaranteed ff). Verified the two client env vars (`VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`) are set in Vercel scoped to All Environments (⇒ Production) with values matching the Supabase project. `.env.local` confirmed gitignored (no secrets in repo).
+- **Rollback plan (unused):** Recorded rollback target `bc65d5e` (the demo build). Primary path was Vercel Instant Rollback — promote the previous demo deployment back to Production, no git surgery; git-level `reset --hard bc65d5e` reserved for a full cutover revert. Not needed — smoke test passed clean.
+- **Verified (production, incognito):** All 7 smoke tests pass on `tempo-demo-mu.vercel.app` — app loads (no blank screen ⇒ env vars reached runtime), auth end-to-end (login/logout), profile creates (M3), workout persists (M4), wellness persists (M4), the real Brad↔Jethro link surfaces (M5/M5.5), coordination note persists across reload (M6). Live against real Supabase.
+- **Next:** M7 — injuries (read): surface real injury/concussion data through RLS, app-layer medical-field hiding (deferred from M2). Carry ticket: `calc.wellnessAvg` divide-by-enabled fix.
+
+---
+
 ## 2026-07-03 — Milestone 6 (Part 1): Coordination notes persistence (complete)
 
 - **Shipped — client (notes only, no cutover):** new data layer `src/lib/data/notes.js` (`rowToNote`/`noteToRow` mappers — `author_name`→`author`, `author_role`→`role`, `created_at`→`date`; `listNotes`, `listNotesForAthletes`, `createNote`, `acknowledgeNote`, `archiveNote`). Athlete `Promise.all` load gains `listNotes` (dropped the `setCoordinationNotes([])` placeholder); acknowledge/archive are now async — optimistic local update then persist for a real athlete (demo personas stay in-memory). Practitioner roster load replaces `setNotes([])` with `listNotesForAthletes(ids)`; `addNote` is async and calls `createNote` for a real practitioner. `CoordinationNotesPanel` + `NoteComposer` untouched. Build green; `notes.js` lint-clean; App.jsx error count unchanged at 51 (no new errors).
