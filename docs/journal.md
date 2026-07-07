@@ -14,6 +14,16 @@ Five lines per session: what shipped, what didn't, what's open, next step, brief
 
 ---
 
+## 2026-07-07 — Milestone 7 (Part 1): Injuries persistence — read + create + edit (complete)
+
+- **Shipped:** Injuries move from in-memory to Supabase. New `src/lib/data/injuries.js` (`rowToInjury`/`injuryToRow` mappers, `listInjuries`, `listInjuriesForAthletes`, `createInjury`, `updateInjury`; mapper clamps `severity`→1..4 and validates `status` against the CHECK enum). Migration `0012_injury_columns.sql` adds seven nullable columns the demo UI wrote but `0005` never defined (`imaging_findings`, `treatment`, `prevention`, `rom_limitation`, `actual_rtp`, `follow_up`, general `notes`) — additive, no RLS change. Both shells wired: athlete `saveInjury`/`updateInjury` and practitioner `addInjury`/`updateInjury` persist for real users; demo personas stay in-memory (keeping their in-memory concussion auto-link). Commits `13506df` (Part 1) + `ef642f9` (wellnessAvg), pushed to `origin/main` → deployed to production.
+- **Bug found + fixed (blank screen):** athlete self-reports leave `injury_type` null (athletes don't make the strain-vs-sprain clinical call — a practitioner classifies on review). The practitioner side crashed on `openInj.injuryType.split(...)` (`App.jsx:6010`). Full null-guard scan of every `inj.`/`openInj.` chain: fixed 6010 (`.split`) and 6005 (`.localeCompare` on nullable `reported_on`); card titles (6954/7141/9935) now fall back to **"Not yet classified"**; verified the rest already guarded (`recurrence`/`activity`/`statusChangedAt`, all `rtpProgress.map`).
+- **Also closed:** the M4-ticketed `calc.wellnessAvg` — was averaging over a fixed /6 with `c[f] || 0`, counting disabled fields as 0 and dragging Recovery toward "Fresh". Now divides by answered values only (`v != null`, still admits a real 0). Its own commit `ef642f9`.
+- **Verified:** M7 acceptance criteria 1–3 live against production Supabase (practitioner creates → athlete sees; athlete self-reports null-type → practitioner sees "Not yet classified", detail opens, classifying updates everywhere); both sides persist across hard-reload. Jethro's old seeded demo injuries are stale by design (no dedup — he re-enters real ones).
+- **Next: M7 Part 2** — per-injury sharing writes (excluded/included + RLS exclusion end-to-end), concussion auto-linking (two-way `linked_injury_id`/`linked_concussion_id`), medical-field read/write gating (`view_medical`). Decisions D1–D8 from the Part-1 plan still stand; D2 (clinical-write needs `view_medical`+`edit_injuries`) and D3 (read gating app-layer, honest non-RLS caveat) are the Part 2 core.
+
+---
+
 ## 2026-07-07 — Milestone 6 (Part 2): Cutover to production (complete)
 
 - **Shipped:** Cut the backend over to production. Fast-forwarded `main` → `backend-mvp` (`bc65d5e..41882d6`, 8 commits, no merge commit, no conflicts) and pushed to `origin/main`, which triggered the Vercel Production build on `tempo-demo-mu.vercel.app`. `main` is now the real backend app; the in-memory demo is retired. No code changes this session — pure cutover.
