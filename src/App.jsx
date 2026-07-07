@@ -7,6 +7,7 @@ import * as WellnessData from './lib/data/wellness';
 import * as InvitationsData from './lib/data/invitations';
 import * as LinksData from './lib/data/links';
 import * as NotesData from './lib/data/notes';
+import * as InjuriesData from './lib/data/injuries';
 
 // ============================================================
 // Demo configuration
@@ -1597,12 +1598,11 @@ function AthleteApp({ currentUser, demoAthleteId, realAthlete, auditLog, recordA
 
     if (isRealAthlete) {
       // Real DB-backed athlete. Workouts (M3) + wellness (M4) come from Supabase;
-      // the remaining domains (files, injuries, notes) stay empty/in-memory until
-      // their own milestones migrate them (M10, M7, M6).
+      // the remaining domains (files, notes) stay empty/in-memory until their own
+      // milestones migrate them (M10, M6). Injuries are DB-backed as of M7.
       setDemoAthlete(realAthlete);
       if (realAthlete.wellnessSettings) setWellnessSettings(realAthlete.wellnessSettings);
       setFiles([]);
-      setInjuries([]);
       let active = true;
       Promise.all([
         WorkoutsData.listWorkouts(realAthlete.id),
@@ -1611,14 +1611,16 @@ function AthleteApp({ currentUser, demoAthleteId, realAthlete, auditLog, recordA
         InvitationsData.listMyInvitations(),             // pending invites to accept (M5)
         InvitationsData.listSentInvitations(currentUser.id), // practitioners I've invited (M5.5)
         NotesData.listNotes(realAthlete.id),             // coordination notes (M6); RLS returns athlete-visible only
+        InjuriesData.listInjuries(realAthlete.id),       // injuries (M7); self sees all own
       ])
-        .then(([ws, cs, lnks, invs, sent, notes]) => {
+        .then(([ws, cs, lnks, invs, sent, notes, injs]) => {
           if (!active) return;
           setWorkouts(ws); setCheckins(cs); setLinks(lnks);
           // Only p2a invites are addressed to the athlete; filter defensively.
           setInvitations(invs.filter(i => i.direction === 'practitioner_to_athlete'));
           setSentInvitations(sent.filter(i => i.direction === 'athlete_to_practitioner'));
           setCoordinationNotes(notes);
+          setInjuries(injs);
         })
         .catch(() => { if (active) { setWorkouts([]); setCheckins([]); showToast('Could not load your data'); } })
         .finally(() => { if (active) setLoading(false); });
@@ -1806,13 +1808,50 @@ function AthleteApp({ currentUser, demoAthleteId, realAthlete, auditLog, recordA
     showToast('Session deleted');
   };
 
-  const saveInjury = (inj) => {
+  // Default RTP progression for an athlete self-report — a generic ladder.
+  // Staff customise it once they see the record.
+  const defaultRtpLadder = () => ([
+    { stage: 'Pain settled at rest', achieved: false, date: null },
+    { stage: 'Full pain-free range of motion', achieved: false, date: null },
+    { stage: 'Strength symmetry restored', achieved: false, date: null },
+    { stage: 'Modified training tolerated', achieved: false, date: null },
+    { stage: 'Cleared for full training', achieved: false, date: null },
+    { stage: 'Cleared for match / competition', achieved: false, date: null }
+  ]);
+
+  const saveInjury = async (inj) => {
+    if (isRealAthlete) {
+      try {
+        if (inj.id) {
+          const updated = await InjuriesData.updateInjury(inj.id, inj);
+          setInjuries(prev => prev.map(x => (x.id === updated.id ? updated : x)));
+          showToast('Injury updated');
+        } else {
+          const payload = {
+            ...inj,
+            reportedBy: currentUser?.name || 'Self-reported',
+            selfReported: true,
+            status: inj.status || 'out',
+            rtpProgress: inj.rtpProgress || defaultRtpLadder(),
+          };
+          // createInjury sets athlete_id / created_by / reported_on. Part 1: no
+          // concussion side-effect, so a "head" body region just saves as an injury.
+          const created = await InjuriesData.createInjury(realAthlete.id, payload, currentUser);
+          setInjuries(prev => [created, ...prev]);
+          showToast('Injury logged — staff will be notified');
+        }
+      } catch (e) {
+        console.error('saveInjury', e);
+        showToast('Could not save injury');
+      }
+      return;
+    }
+    // Demo / in-memory path
     if (inj.id) {
-      // Editing existing
       setInjuries(injuries.map(x => x.id === inj.id ? { ...x, ...inj } : x));
       showToast('Injury updated');
     } else {
-      const myAthleteId = realAthlete?.id || demoAthleteId || currentUser?.athleteId;
+      const myAthleteId = demoAthleteId || currentUser?.athleteId;
       const newEntry = {
         ...inj,
         id: `inj_${Date.now()}`,
@@ -1821,23 +1860,25 @@ function AthleteApp({ currentUser, demoAthleteId, realAthlete, auditLog, recordA
         reportedBy: currentUser?.name || 'Self-reported',
         selfReported: true,
         status: inj.status || 'out',
-        // Default RTP progression for an athlete self-report — a generic ladder.
-        // Staff can customise once they see it.
-        rtpProgress: inj.rtpProgress || [
-          { stage: 'Pain settled at rest', achieved: false, date: null },
-          { stage: 'Full pain-free range of motion', achieved: false, date: null },
-          { stage: 'Strength symmetry restored', achieved: false, date: null },
-          { stage: 'Modified training tolerated', achieved: false, date: null },
-          { stage: 'Cleared for full training', achieved: false, date: null },
-          { stage: 'Cleared for match / competition', achieved: false, date: null }
-        ]
+        rtpProgress: inj.rtpProgress || defaultRtpLadder()
       };
       setInjuries([newEntry, ...injuries]);
       showToast('Injury logged — staff will be notified');
     }
   };
 
-  const updateInjury = (id, patch) => {
+  const updateInjury = async (id, patch) => {
+    if (isRealAthlete) {
+      setInjuries(injuries.map(i => i.id === id ? { ...i, ...patch } : i)); // optimistic
+      try {
+        const updated = await InjuriesData.updateInjury(id, patch);
+        setInjuries(prev => prev.map(i => (i.id === updated.id ? updated : i)));
+      } catch (e) {
+        console.error('updateInjury', e);
+        showToast('Could not save change');
+      }
+      return;
+    }
     setInjuries(injuries.map(i => i.id === id ? { ...i, ...patch } : i));
   };
 
@@ -5814,8 +5855,8 @@ function PractitionerApp({ currentUser, isRealPractitioner, auditLog, recordAudi
     if (isRealPractitioner) {
       // Real DB-backed practitioner (M5). Roster + permissions come from the
       // athlete_user_links this user has; workouts/wellness load via RLS. The
-      // other domains (notes, injuries, tests, files) stay empty until their
-      // milestones migrate them (M6+).
+      // other domains (tests, files) stay empty until their milestones migrate
+      // them (M9+). Notes are DB-backed (M6); injuries are DB-backed (M7).
       let active = true;
       (async () => {
         try {
@@ -5823,12 +5864,13 @@ function PractitionerApp({ currentUser, isRealPractitioner, auditLog, recordAudi
           const ath = roster.map(r => r.athlete);
           const lnks = roster.map(r => r.link);
           const ids = ath.map(a => a.id);
-          const [ws, cs, sent, received, notes] = await Promise.all([
+          const [ws, cs, sent, received, notes, injs] = await Promise.all([
             WorkoutsData.listWorkoutsForAthletes(ids),
             WellnessData.listWellnessForAthletes(ids),
             InvitationsData.listSentInvitations(currentUser.id),
             InvitationsData.listMyInvitations(),
             NotesData.listNotesForAthletes(ids),           // coordination/staff/clinical notes (M6)
+            InjuriesData.listInjuriesForAthletes(ids),     // injuries (M7); RLS: view_injuries + not excluded
           ]);
           if (!active) return;
           setAthletes(ath);
@@ -5839,7 +5881,8 @@ function PractitionerApp({ currentUser, isRealPractitioner, auditLog, recordAudi
           // Invitations addressed to this practitioner from athletes (M5.5).
           setReceivedInvitations(received.filter(i => i.direction === 'athlete_to_practitioner'));
           setNotes(notes);
-          setInjuries([]); setTests([]);
+          setInjuries(injs);
+          setTests([]);
           setConcussionBaselines([]); setConcussionIncidents([]); setFiles([]);
         } catch (e) {
           console.error('practitioner load', e);
@@ -5959,19 +6002,38 @@ function PractitionerApp({ currentUser, isRealPractitioner, auditLog, recordAudi
   const athletesWithStatus = visibleAthletes.map(a => {
     const openInj = injuries
       .filter(i => i.athleteId === a.id && i.status !== 'returned')
-      .sort((x, y) => y.reportedOn.localeCompare(x.reportedOn))[0];
+      .sort((x, y) => (y.reportedOn || '').localeCompare(x.reportedOn || ''))[0];
     if (openInj) {
+      // injuryType is null on athlete self-reports until a practitioner classifies it
+      // — fall back so the compact roster note never crashes (was: unconditional .split).
+      const typePart = openInj.injuryType
+        ? ` · ${openInj.injuryType.split(' ')[0].toLowerCase()}`
+        : ' · unclassified';
       return {
         ...a,
         injuryStatus: openInj.status,
-        injuryNote: `${openInj.side ? openInj.side + ' ' : ''}${openInj.bodyRegion.toLowerCase()} · ${openInj.injuryType.split(' ')[0].toLowerCase()}`
+        injuryNote: `${openInj.side ? openInj.side + ' ' : ''}${openInj.bodyRegion.toLowerCase()}${typePart}`
       };
     }
     return { ...a, injuryStatus: 'available', injuryNote: null };
   });
 
   // Mutations — used by data entry forms in child views
-  const addInjury = (inj) => {
+  const addInjury = async (inj) => {
+    if (isRealPractitioner) {
+      // Part 1: persist the injury via edit_injuries RLS. Concussion auto-linking
+      // is deliberately deferred to M7 Part 2 — so a concussion-type injury saves
+      // as a plain injury row for now, no concussion_incident.
+      try {
+        const created = await InjuriesData.createInjury(inj.athleteId, inj, currentUser);
+        setInjuries(prev => [created, ...prev]);
+      } catch (e) {
+        console.error('addInjury', e);
+        showToast('Could not save injury');
+      }
+      return;
+    }
+    // Demo / in-memory path (keeps the in-memory concussion auto-link for personas).
     const newInj = { ...inj, id: `inj_${Date.now()}`, reportedOn: today() };
     setInjuries([newInj, ...injuries]);
     // If this injury is a concussion, also create a concussion incident automatically.
@@ -6001,7 +6063,18 @@ function PractitionerApp({ currentUser, isRealPractitioner, auditLog, recordAudi
     }
   };
 
-  const updateInjury = (id, patch) => {
+  const updateInjury = async (id, patch) => {
+    if (isRealPractitioner) {
+      setInjuries(injuries.map(i => i.id === id ? { ...i, ...patch } : i)); // optimistic
+      try {
+        const updated = await InjuriesData.updateInjury(id, patch);
+        setInjuries(prev => prev.map(i => (i.id === updated.id ? updated : i)));
+      } catch (e) {
+        console.error('updateInjury', e);
+        showToast('Could not save change');
+      }
+      return;
+    }
     setInjuries(injuries.map(i => i.id === id ? { ...i, ...patch } : i));
   };
 
@@ -6883,7 +6956,7 @@ function PerformanceTeamView({ athletes, perfData, onPickAthlete }) {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={styles.perfRowName}>{a.name}</div>
                         <div style={styles.perfRowMeta}>
-                          {inj.side ? `${inj.side} ` : ''}{inj.bodyRegion} · {inj.injuryType} · day {days}
+                          {inj.side ? `${inj.side} ` : ''}{inj.bodyRegion} · {inj.injuryType || 'Not yet classified'} · day {days}
                         </div>
                       </div>
                       <div style={styles.perfRowRight}>
@@ -7070,7 +7143,7 @@ function InjuriesTeamSection({ injuries, athletes, onPickAthlete }) {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={styles.perfRowName}>{a.name}</div>
                     <div style={styles.perfRowMeta}>
-                      {inj.side ? `${inj.side} ` : ''}{inj.bodyRegion} · {inj.injuryType}
+                      {inj.side ? `${inj.side} ` : ''}{inj.bodyRegion} · {inj.injuryType || 'Not yet classified'}
                     </div>
                   </div>
                 </div>
@@ -9864,7 +9937,7 @@ function InjuryDetailCard({ inj, canMedical, canEdit, currentUser, onOpen, onUpd
         <span style={{ ...styles.aTrafficDot, background: dotColor, marginTop: 6, marginRight: 10 }} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={styles.perfRowName}>
-            {inj.side ? `${inj.side} ` : ''}{inj.bodyRegion} · {inj.injuryType}
+            {inj.side ? `${inj.side} ` : ''}{inj.bodyRegion} · {inj.injuryType || 'Not yet classified'}
           </div>
           <div style={styles.perfRowMeta}>
             {fmtShort(inj.occurredOn)} · day {days} · {inj.status}
