@@ -100,9 +100,19 @@ const calc = {
     });
     if (!recent.length) return null;
     const fields = ['fatigue', 'soreness', 'sleep', 'stress', 'mood', 'motivation'];
-    const sum = recent.reduce((s, c) =>
-      s + fields.reduce((fs, f) => fs + (c[f] || 0), 0), 0);
-    return sum / (recent.length * fields.length);
+    // Divide by ANSWERED field-values only. Disabled fields are stored null (M4),
+    // and the old `c[f] || 0` counted them as 0 in a /6 denominator — dragging the
+    // average toward the "Fresh" end whenever an athlete turned questions off.
+    // `v != null` keeps a legitimate score of 0 while skipping null/undefined.
+    let sum = 0, count = 0;
+    for (const c of recent) {
+      for (const f of fields) {
+        const v = c[f];
+        if (v != null) { sum += v; count += 1; }
+      }
+    }
+    if (!count) return null;
+    return sum / count;
   }
 };
 
