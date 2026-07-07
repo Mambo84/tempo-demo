@@ -16,6 +16,30 @@ import { supabase } from '../supabase';
 
 const STATUSES = new Set(['out', 'modified', 'returned']); // 0005 CHECK constraint
 
+// Clinical / medical fields, gated on view_medical (M2 decision 1 — app-layer,
+// not RLS, since RLS is row-level). Camel keys for read-stripping the UI object;
+// snake columns for stripping a write payload. `notes`, `followUp`, `painScale`
+// are deliberately NOT medical — the demo shows them regardless of view_medical.
+export const MEDICAL_FIELDS = [
+  'diagnosis', 'icd10', 'osicsCode', 'imaging', 'imagingDate',
+  'imagingFindings', 'romLimitation', 'clinicianNotes', 'treatment', 'prevention',
+];
+const MEDICAL_COLUMNS = [
+  'diagnosis', 'icd10', 'osics_code', 'imaging', 'imaging_date',
+  'imaging_findings', 'rom_limitation', 'clinician_notes', 'treatment', 'prevention',
+];
+
+// Null out clinical fields on a UI injury for a viewer without medical access to
+// it. Caller decides access (role view_medical OR this injury's sharing.included
+// OR self); this just applies the strip. Not a hard boundary — RLS still returns
+// the columns over the wire (D3 caveat) — but keeps them out of the passed object.
+export function stripMedicalFields(injury) {
+  if (!injury) return injury;
+  const out = { ...injury };
+  for (const f of MEDICAL_FIELDS) out[f] = null;
+  return out;
+}
+
 // today as YYYY-MM-DD (client-side; matches App.jsx today())
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -156,13 +180,17 @@ export async function listInjuriesForAthletes(athleteIds) {
 // RLS on edit_injuries (self always passes). reported_on defaults to today. Part 1:
 // no concussion side-effects. Standard insert().select() — the injuries SELECT-policy
 // helpers read athletes/links, not the just-inserted row, so no M3 RETURNING trap.
-export async function createInjury(athleteId, input, author) {
+export async function createInjury(athleteId, input, author, opts = {}) {
   const row = {
     ...injuryToRow(input),
     athlete_id: athleteId,
     created_by: author?.id ?? null,
     reported_on: input.reportedOn || today(),
   };
+  // Clinical-write gate (M7 Part 2, D2): writing medical fields needs view_medical
+  // in addition to edit_injuries. When the caller lacks it, drop the clinical
+  // columns so a non-medical editor can still create/edit the non-clinical record.
+  if (opts.allowMedical === false) for (const c of MEDICAL_COLUMNS) delete row[c];
   const { data, error } = await supabase
     .from('injuries')
     .insert(row)
@@ -174,13 +202,68 @@ export async function createInjury(athleteId, input, author) {
 
 // Patch an injury (edit fields, availability/status, RTP milestone toggles). Gated by
 // RLS on edit_injuries (self always passes). Only mapped keys in `patch` are written.
-export async function updateInjury(id, patch) {
+export async function updateInjury(id, patch, opts = {}) {
+  const row = injuryToRow(patch);
+  if (opts.allowMedical === false) for (const c of MEDICAL_COLUMNS) delete row[c];
   const { data, error } = await supabase
     .from('injuries')
-    .update(injuryToRow(patch))
+    .update(row)
     .eq('id', id)
     .select()
     .single();
   if (error) throw error;
   return rowToInjury(data);
+}
+
+// Toggle a single RTP milestone atomically via the set_rtp_stage RPC (0013).
+// Server-stamps completedBy/completedAt/date (or clears them on undo) and does a
+// per-element jsonb_set — so a concurrent toggle of a DIFFERENT stage is not
+// clobbered. Returns the full updated injury (caller re-applies medical stripping).
+export async function setRtpStage(injuryId, index, achieved, byName) {
+  const { data, error } = await supabase.rpc('set_rtp_stage', {
+    p_injury_id: injuryId,
+    p_index: index,
+    p_achieved: achieved,
+    p_by: byName ?? null,
+  });
+  if (error) throw error;
+  // A function returning a single composite comes back as an object, but tolerate
+  // a single-element array in case PostgREST treats it as set-returning.
+  return rowToInjury(Array.isArray(data) ? data[0] : data);
+}
+
+// ── concussion incidents (read; auto-created by the 0013 trigger) ─────────────
+export function rowToConcussionIncident(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    athleteId: row.athlete_id,
+    date: row.date,
+    mechanism: row.mechanism,
+    description: row.description,
+    sport: row.sport,
+    symptoms: row.symptoms,
+    rtpStatus: row.rtp_status,
+    scatData: row.scat_data,
+    linkedInjuryId: row.linked_injury_id,
+    autoCreated: !!row.auto_created,
+    reportedBy: row.reported_by,
+    notes: row.notes,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+// Concussion incidents for a set of athletes (practitioner roster). RLS gates on
+// view_injuries. Part 2 reads these so trigger-created incidents surface; manual
+// SCAT authoring stays out of scope (D8).
+export async function listConcussionIncidents(athleteIds) {
+  if (!athleteIds || !athleteIds.length) return [];
+  const { data, error } = await supabase
+    .from('concussion_incidents')
+    .select('*')
+    .in('athlete_id', athleteIds)
+    .order('date', { ascending: false });
+  if (error) throw error;
+  return (data || []).map(rowToConcussionIncident);
 }

@@ -129,6 +129,16 @@ const fmtShort = (ds) => {
   return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
 };
 
+// Strip an injury's clinical fields for a practitioner without medical access to
+// it — role view_medical OR this injury's sharing.included grants access; the
+// athlete (self) never reaches here. Used on load and after each RPC/refetch
+// (M7 Part 2, D2/D3 — app-layer medical gating).
+function stripInjuryForViewer(inj, link, viewerId) {
+  const roleMedical = !!link?.permissions?.view_medical;
+  const included = (inj?.sharing?.included || []).includes(viewerId);
+  return (roleMedical || included) ? inj : InjuriesData.stripMedicalFields(inj);
+}
+
 // ============================================================
 // ============================================================
 // Test catalog — evidence-grounded test definitions
@@ -1892,6 +1902,31 @@ function AthleteApp({ currentUser, demoAthleteId, realAthlete, auditLog, recordA
     setInjuries(injuries.map(i => i.id === id ? { ...i, ...patch } : i));
   };
 
+  // RTP milestone toggle — routes through the atomic set_rtp_stage RPC (server
+  // stamps who/when) for a real athlete; in-memory for demo personas. Self always
+  // has full medical access, so no stripping of the returned row.
+  const toggleRtpStage = async (injuryId, index, achieved) => {
+    if (isRealAthlete) {
+      try {
+        const updated = await InjuriesData.setRtpStage(injuryId, index, achieved, currentUser?.name || 'Self');
+        setInjuries(prev => prev.map(i => (i.id === updated.id ? updated : i)));
+      } catch (e) {
+        console.error('toggleRtpStage', e);
+        showToast('Could not update milestone');
+      }
+      return;
+    }
+    setInjuries(injuries.map(i => {
+      if (i.id !== injuryId) return i;
+      const rtpProgress = (i.rtpProgress || []).map((s, idx) => idx === index
+        ? (achieved
+            ? { ...s, achieved: true, date: today(), completedBy: currentUser?.name || 'Self', completedAt: new Date().toISOString() }
+            : { ...s, achieved: false, date: null, completedBy: null, completedAt: null })
+        : s);
+      return { ...i, rtpProgress };
+    }));
+  };
+
   const saveCheckin = async (c) => {
     if (isRealAthlete) {
       try {
@@ -2329,6 +2364,7 @@ function AthleteApp({ currentUser, demoAthleteId, realAthlete, auditLog, recordA
         onBack={() => setView('home')}
         onReport={() => { setEditingInjury(null); setView('reportInjury'); }}
         onUpdate={updateInjury}
+        onToggleStage={toggleRtpStage}
         currentUser={currentUser}
         links={links}
         allUsers={seed.teamUsers || []}
@@ -2951,7 +2987,7 @@ function CoordinationNotesPanel({ notes, onAcknowledge, onArchive }) {
 // Athletes can see all their own injuries (active and resolved),
 // log a new self-report, and contribute to RTP milestones.
 // ============================================================
-function AthleteInjuriesView({ injuries, onBack, onReport, onUpdate, currentUser, links, allUsers }) {
+function AthleteInjuriesView({ injuries, onBack, onReport, onUpdate, onToggleStage, currentUser, links, allUsers }) {
   const active = injuries.filter(i => i.status !== 'returned');
   const resolved = injuries.filter(i => i.status === 'returned');
 
@@ -2987,6 +3023,7 @@ function AthleteInjuriesView({ injuries, onBack, onReport, onUpdate, currentUser
                   links={links}
                   allUsers={allUsers}
                   onUpdate={(patch) => onUpdate(inj.id, patch)}
+                  onToggleStage={(index, achieved) => onToggleStage(inj.id, index, achieved)}
                 />
               ))}
             </div>
@@ -3005,6 +3042,7 @@ function AthleteInjuriesView({ injuries, onBack, onReport, onUpdate, currentUser
                   links={links}
                   allUsers={allUsers}
                   onUpdate={(patch) => onUpdate(inj.id, patch)}
+                  onToggleStage={(index, achieved) => onToggleStage(inj.id, index, achieved)}
                 />
               ))}
             </div>
@@ -3018,7 +3056,7 @@ function AthleteInjuriesView({ injuries, onBack, onReport, onUpdate, currentUser
 
 
 // Athlete-friendly summary card for one injury
-function AthleteInjuryCard({ inj, currentUser, links, allUsers, onUpdate }) {
+function AthleteInjuryCard({ inj, links, allUsers, onUpdate, onToggleStage }) {
   const [expanded, setExpanded] = useState(false);
   const [confirmStageUndo, setConfirmStageUndo] = useState(null);
   const days = Math.round((new Date() - new Date(inj.occurredOn)) / 86400000);
@@ -3036,23 +3074,14 @@ function AthleteInjuryCard({ inj, currentUser, links, allUsers, onUpdate }) {
   const toggleStage = (index) => {
     const stage = inj.rtpProgress[index];
     if (stage.achieved) {
-      setConfirmStageUndo(index);
+      setConfirmStageUndo(index);   // undo needs confirmation
       return;
     }
-    const newProgress = inj.rtpProgress.map((s, i) =>
-      i === index ? {
-        ...s, achieved: true, date: today(),
-        completedBy: currentUser?.name || 'Self'
-      } : s
-    );
-    onUpdate({ rtpProgress: newProgress });
+    onToggleStage(index, true);     // atomic RPC persist; server stamps who/when
   };
 
   const confirmUndoStage = () => {
-    const newProgress = inj.rtpProgress.map((s, i) =>
-      i === confirmStageUndo ? { ...s, achieved: false, date: null, completedBy: null } : s
-    );
-    onUpdate({ rtpProgress: newProgress });
+    onToggleStage(confirmStageUndo, false);
     setConfirmStageUndo(null);
   };
 
@@ -5874,13 +5903,14 @@ function PractitionerApp({ currentUser, isRealPractitioner, auditLog, recordAudi
           const ath = roster.map(r => r.athlete);
           const lnks = roster.map(r => r.link);
           const ids = ath.map(a => a.id);
-          const [ws, cs, sent, received, notes, injs] = await Promise.all([
+          const [ws, cs, sent, received, notes, injs, incidents] = await Promise.all([
             WorkoutsData.listWorkoutsForAthletes(ids),
             WellnessData.listWellnessForAthletes(ids),
             InvitationsData.listSentInvitations(currentUser.id),
             InvitationsData.listMyInvitations(),
             NotesData.listNotesForAthletes(ids),           // coordination/staff/clinical notes (M6)
             InjuriesData.listInjuriesForAthletes(ids),     // injuries (M7); RLS: view_injuries + not excluded
+            InjuriesData.listConcussionIncidents(ids),     // incidents (M7 Part 2); auto-created by 0013 trigger
           ]);
           if (!active) return;
           setAthletes(ath);
@@ -5891,9 +5921,14 @@ function PractitionerApp({ currentUser, isRealPractitioner, auditLog, recordAudi
           // Invitations addressed to this practitioner from athletes (M5.5).
           setReceivedInvitations(received.filter(i => i.direction === 'athlete_to_practitioner'));
           setNotes(notes);
-          setInjuries(injs);
+          // Strip clinical fields per this viewer's medical access (use the freshly
+          // fetched lnks — the links state isn't set yet inside this closure).
+          setInjuries(injs.map(i =>
+            stripInjuryForViewer(i, lnks.find(l => l.athleteId === i.athleteId && l.status === 'active'), currentUser.id)
+          ));
+          setConcussionIncidents(incidents);
           setTests([]);
-          setConcussionBaselines([]); setConcussionIncidents([]); setFiles([]);
+          setConcussionBaselines([]); setFiles([]);
         } catch (e) {
           console.error('practitioner load', e);
           if (active) showToast('Could not load your caseload');
@@ -6029,14 +6064,33 @@ function PractitionerApp({ currentUser, isRealPractitioner, auditLog, recordAudi
   });
 
   // Mutations — used by data entry forms in child views
+  // M7 Part 2 helpers (real practitioner).
+  const activeLinkFor = (athleteId) =>
+    links.find(l => l.athleteId === athleteId && l.status === 'active');
+  const canWriteMedicalFor = (athleteId) => !!activeLinkFor(athleteId)?.permissions?.view_medical;
+  // Refetch injuries + incidents after a write that may have fired the concussion
+  // trigger (the trigger's back-link/insert happen AFTER the write's RETURNING).
+  const refreshInjuryData = async () => {
+    const ids = athletes.map(a => a.id);
+    const [injs, incidents] = await Promise.all([
+      InjuriesData.listInjuriesForAthletes(ids),
+      InjuriesData.listConcussionIncidents(ids),
+    ]);
+    setInjuries(injs.map(i => stripInjuryForViewer(i, activeLinkFor(i.athleteId), currentUser.id)));
+    setConcussionIncidents(incidents);
+  };
+
   const addInjury = async (inj) => {
     if (isRealPractitioner) {
-      // Part 1: persist the injury via edit_injuries RLS. Concussion auto-linking
-      // is deliberately deferred to M7 Part 2 — so a concussion-type injury saves
-      // as a plain injury row for now, no concussion_incident.
       try {
-        const created = await InjuriesData.createInjury(inj.athleteId, inj, currentUser);
-        setInjuries(prev => [created, ...prev]);
+        // Clinical-write gate (D2): medical fields require view_medical + edit_injuries.
+        const created = await InjuriesData.createInjury(
+          inj.athleteId, inj, currentUser, { allowMedical: canWriteMedicalFor(inj.athleteId) }
+        );
+        setInjuries(prev => [stripInjuryForViewer(created, activeLinkFor(inj.athleteId), currentUser.id), ...prev]);
+        // Created as a concussion → the 0013 trigger auto-created a linked incident
+        // and set linked_concussion_id after RETURNING; refetch to surface both.
+        if ((inj.injuryType || '').toLowerCase() === 'concussion') await refreshInjuryData();
       } catch (e) {
         console.error('addInjury', e);
         showToast('Could not save injury');
@@ -6077,8 +6131,15 @@ function PractitionerApp({ currentUser, isRealPractitioner, auditLog, recordAudi
     if (isRealPractitioner) {
       setInjuries(injuries.map(i => i.id === id ? { ...i, ...patch } : i)); // optimistic
       try {
-        const updated = await InjuriesData.updateInjury(id, patch);
-        setInjuries(prev => prev.map(i => (i.id === updated.id ? updated : i)));
+        const athleteId = injuries.find(i => i.id === id)?.athleteId;
+        const updated = await InjuriesData.updateInjury(id, patch, {
+          allowMedical: athleteId ? canWriteMedicalFor(athleteId) : true,
+        });
+        setInjuries(prev => prev.map(i => (i.id === updated.id
+          ? stripInjuryForViewer(updated, activeLinkFor(updated.athleteId), currentUser.id) : i)));
+        // Classifying injury_type as Concussion fires the trigger — refetch for the
+        // auto-created incident + two-way link.
+        if ((patch.injuryType || '').toLowerCase() === 'concussion') await refreshInjuryData();
       } catch (e) {
         console.error('updateInjury', e);
         showToast('Could not save change');
@@ -6086,6 +6147,31 @@ function PractitionerApp({ currentUser, isRealPractitioner, auditLog, recordAudi
       return;
     }
     setInjuries(injuries.map(i => i.id === id ? { ...i, ...patch } : i));
+  };
+
+  // RTP milestone toggle — atomic set_rtp_stage RPC (server stamps who/when) for a
+  // real practitioner; the returned full row is re-stripped for this viewer.
+  const toggleRtpStage = async (injuryId, index, achieved) => {
+    if (isRealPractitioner) {
+      try {
+        const updated = await InjuriesData.setRtpStage(injuryId, index, achieved, currentUser?.name || 'Unknown');
+        setInjuries(prev => prev.map(i => (i.id === updated.id
+          ? stripInjuryForViewer(updated, activeLinkFor(updated.athleteId), currentUser.id) : i)));
+      } catch (e) {
+        console.error('toggleRtpStage', e);
+        showToast('Could not update milestone');
+      }
+      return;
+    }
+    setInjuries(injuries.map(i => {
+      if (i.id !== injuryId) return i;
+      const rtpProgress = (i.rtpProgress || []).map((s, idx) => idx === index
+        ? (achieved
+            ? { ...s, achieved: true, date: today(), completedBy: currentUser?.name || 'Unknown', completedAt: new Date().toISOString() }
+            : { ...s, achieved: false, date: null, completedBy: null, completedAt: null })
+        : s);
+      return { ...i, rtpProgress };
+    }));
   };
 
   const addTest = (t) => {
@@ -6307,7 +6393,7 @@ function PractitionerApp({ currentUser, isRealPractitioner, auditLog, recordAudi
   // Mutation handlers passed to athlete detail (for entering data in-context)
   const perfData = {
     injuries, tests, concussionBaselines, concussionIncidents, files, workouts,
-    addInjury, updateInjury, addTest, addBaseline, addConcussionIncident, addFile,
+    addInjury, updateInjury, toggleRtpStage, addTest, addBaseline, addConcussionIncident, addFile,
     mergeUploadedSessions
   };
 
@@ -9696,10 +9782,12 @@ function AthletePerformanceTab({ athlete, perfData, currentUser, links, recordAu
                     key={inj.id}
                     inj={inj}
                     canMedical={canMedicalForThis}
+                    canEditMedical={canMedical}
                     canEdit={canEditInjuries}
                     currentUser={currentUser}
                     onOpen={() => recordAudit?.('view_injuries', athlete.id, `Opened injury: ${inj.bodyRegion}`)}
                     onUpdate={(patch) => perfData.updateInjury(inj.id, patch)}
+                    onToggleStage={(index, achieved) => perfData.toggleRtpStage(inj.id, index, achieved)}
                   />
                 );
               })
@@ -9708,6 +9796,7 @@ function AthletePerformanceTab({ athlete, perfData, currentUser, links, recordAu
             {showAddInjury && canEditInjuries && (
               <InjuryForm
                 athleteId={athlete.id}
+                canMedical={canMedical}
                 onSave={(inj) => { perfData.addInjury(inj); setShowAddInjury(false); }}
                 onCancel={() => setShowAddInjury(false)}
               />
@@ -9883,10 +9972,11 @@ function AthletePerformanceTab({ athlete, perfData, currentUser, links, recordAu
   );
 }
 
-function InjuryDetailCard({ inj, canMedical, canEdit, currentUser, onOpen, onUpdate }) {
+function InjuryDetailCard({ inj, canMedical, canEditMedical, canEdit, currentUser, onOpen, onUpdate, onToggleStage }) {
   const [expanded, setExpanded] = useState(false);
   const [confirmStageUndo, setConfirmStageUndo] = useState(null); // stage index to confirm undoing
   const [editingStatus, setEditingStatus] = useState(false);
+  const [editing, setEditing] = useState(false); // inline edit-details mode (M7 Part 2)
   const dotColor = inj.status === 'returned' ? '#3a8a4d'
                 : inj.status === 'modified' ? '#d4a017'
                 : '#c8472b';
@@ -9905,27 +9995,14 @@ function InjuryDetailCard({ inj, canMedical, canEdit, currentUser, onOpen, onUpd
     if (!canEdit) return;
     const stage = inj.rtpProgress[index];
     if (stage.achieved) {
-      // Undoing — confirm first to prevent accidents
-      setConfirmStageUndo(index);
+      setConfirmStageUndo(index);   // undo needs confirmation
       return;
     }
-    // Marking complete — no confirmation needed
-    const newProgress = inj.rtpProgress.map((s, i) =>
-      i === index ? {
-        ...s,
-        achieved: true,
-        date: today(),
-        completedBy: currentUser?.name || 'Unknown'
-      } : s
-    );
-    onUpdate({ rtpProgress: newProgress });
+    onToggleStage(index, true);     // atomic RPC persist; server stamps who/when
   };
 
   const confirmUndoStage = () => {
-    const newProgress = inj.rtpProgress.map((s, i) =>
-      i === confirmStageUndo ? { ...s, achieved: false, date: null, completedBy: null } : s
-    );
-    onUpdate({ rtpProgress: newProgress });
+    onToggleStage(confirmStageUndo, false);
     setConfirmStageUndo(null);
   };
 
@@ -9965,6 +10042,24 @@ function InjuryDetailCard({ inj, canMedical, canEdit, currentUser, onOpen, onUpd
 
       {expanded && (
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #efeadd' }}>
+          {editing ? (
+            <InjuryForm
+              athleteId={inj.athleteId}
+              existing={inj}
+              canMedical={canEditMedical}
+              onSave={(patch) => { onUpdate(patch); setEditing(false); }}
+              onCancel={() => setEditing(false)}
+            />
+          ) : (
+          <>
+          {canEdit && (
+            <button
+              onClick={() => setEditing(true)}
+              style={{ marginBottom: 14, padding: '6px 12px', background: 'transparent', border: '1px solid #e0d9c8', borderRadius: 8, fontFamily: 'inherit', fontSize: 12, color: '#6b6456', cursor: 'pointer' }}
+            >
+              Edit details {inj.injuryType ? '' : '· classify'}
+            </button>
+          )}
           {/* RTP progress bar */}
           {rtpStagesTotal > 0 && (
             <div style={{ marginBottom: 14 }}>
@@ -10268,6 +10363,8 @@ function InjuryDetailCard({ inj, canMedical, canEdit, currentUser, onOpen, onUpd
                 </button>
               )}
             </div>
+          )}
+          </>
           )}
         </div>
       )}
@@ -10840,39 +10937,45 @@ function GpsUploadWizard({ mode, athletes, athleteId, onSave, onCancel }) {
 }
 
 
-function InjuryForm({ athleteId, onSave, onCancel }) {
-  // Core
-  const [bodyRegion, setBodyRegion] = useState(BODY_REGIONS[0]);
-  const [side, setSide] = useState('Left');
-  const [injuryType, setInjuryType] = useState(INJURY_TYPES[0]);
-  const [mechanism, setMechanism] = useState(INJURY_MECHANISMS[0]);
-  const [contactMechanism, setContactMechanism] = useState('Non-contact');
-  const [activity, setActivity] = useState('Training');
-  const [activityContext, setActivityContext] = useState('');
-  const [severity, setSeverity] = useState(2);
-  const [recurrence, setRecurrence] = useState('New (first occurrence)');
-  const [priorInjuryRef, setPriorInjuryRef] = useState('');
-  const [status, setStatus] = useState('modified');
-  const [occurredOn, setOccurredOn] = useState(today());
-  const [expectedDays, setExpectedDays] = useState(7);
+function InjuryForm({ athleteId, onSave, onCancel, existing = null, canMedical = true }) {
+  const isEdit = !!existing;
+  // Core — prefilled from `existing` when editing (e.g. a practitioner classifying
+  // a self-reported injury: injury_type is null → defaults to the first type, which
+  // they set consciously before saving).
+  const [bodyRegion, setBodyRegion] = useState(existing?.bodyRegion ?? BODY_REGIONS[0]);
+  const [side, setSide] = useState(existing?.side ?? 'Left');
+  const [injuryType, setInjuryType] = useState(existing?.injuryType ?? INJURY_TYPES[0]);
+  const [mechanism, setMechanism] = useState(existing?.mechanism ?? INJURY_MECHANISMS[0]);
+  const [contactMechanism, setContactMechanism] = useState(existing?.contactMechanism ?? 'Non-contact');
+  const [activity, setActivity] = useState(existing?.activity ?? 'Training');
+  const [activityContext, setActivityContext] = useState(existing?.activityContext ?? '');
+  const [severity, setSeverity] = useState(existing?.severity ?? 2);
+  const [recurrence, setRecurrence] = useState(existing?.recurrence ?? 'New (first occurrence)');
+  const [priorInjuryRef, setPriorInjuryRef] = useState(existing?.priorInjuryRef ?? '');
+  const [status, setStatus] = useState(existing?.status ?? 'modified');
+  const [occurredOn, setOccurredOn] = useState(existing?.occurredOn ?? today());
+  const [expectedDays, setExpectedDays] = useState(() =>
+    existing?.expectedRTP && existing?.occurredOn
+      ? Math.max(0, Math.round((new Date(existing.expectedRTP) - new Date(existing.occurredOn)) / 86400000))
+      : 7);
 
   // Clinical
-  const [diagnosis, setDiagnosis] = useState('');
-  const [icd10, setIcd10] = useState('');
-  const [osicsCode, setOsicsCode] = useState('');
-  const [painScale, setPainScale] = useState(3);
-  const [romLimitation, setRomLimitation] = useState('');
+  const [diagnosis, setDiagnosis] = useState(existing?.diagnosis ?? '');
+  const [icd10, setIcd10] = useState(existing?.icd10 ?? '');
+  const [osicsCode, setOsicsCode] = useState(existing?.osicsCode ?? '');
+  const [painScale, setPainScale] = useState(existing?.painScale ?? 3);
+  const [romLimitation, setRomLimitation] = useState(existing?.romLimitation ?? '');
 
   // Imaging
-  const [imaging, setImaging] = useState('None');
-  const [imagingDate, setImagingDate] = useState('');
-  const [imagingFindings, setImagingFindings] = useState('');
+  const [imaging, setImaging] = useState(existing?.imaging ?? 'None');
+  const [imagingDate, setImagingDate] = useState(existing?.imagingDate ?? '');
+  const [imagingFindings, setImagingFindings] = useState(existing?.imagingFindings ?? '');
 
   // Plan
-  const [treatment, setTreatment] = useState('');
-  const [followUp, setFollowUp] = useState('');
-  const [prevention, setPrevention] = useState('');
-  const [notes, setNotes] = useState('');
+  const [treatment, setTreatment] = useState(existing?.treatment ?? '');
+  const [followUp, setFollowUp] = useState(existing?.followUp ?? '');
+  const [prevention, setPrevention] = useState(existing?.prevention ?? '');
+  const [notes, setNotes] = useState(existing?.notes ?? '');
 
   // Section visibility (collapsible)
   const [openSection, setOpenSection] = useState('core'); // core | clinical | imaging | plan
@@ -10883,24 +10986,31 @@ function InjuryForm({ athleteId, onSave, onCancel }) {
       d.setDate(d.getDate() + Number(expectedDays));
       return d.toISOString().slice(0, 10);
     })();
-    onSave({
+    const base = {
       athleteId, bodyRegion, side, injuryType, mechanism,
       contactMechanism, activity, activityContext,
       severity: Number(severity), recurrence, priorInjuryRef: priorInjuryRef || null,
-      status, occurredOn, expectedRTP, actualRTP: null,
+      occurredOn, expectedRTP,
       diagnosis, icd10: icd10 || null, osicsCode: osicsCode || null,
       painScale: Number(painScale), romLimitation: romLimitation || null,
       imaging, imagingDate: imagingDate || null, imagingFindings: imagingFindings || null,
       treatment, followUp: followUp || null, prevention: prevention || null,
       notes,
-      rtpProgress: [],
-      reportedBy: 'Dr. Patel'
-    });
+    };
+    // Clinical fields for a non-medical editor are still in `base`, but updateInjury's
+    // allowMedical=false strips them server-side, so the existing values are preserved.
+    if (isEdit) {
+      // Preserve status (owned by the Availability control), rtpProgress, actualRTP,
+      // and reportedBy — only the fields on this form are patched.
+      onSave(base);
+    } else {
+      onSave({ ...base, status, actualRTP: null, rtpProgress: [], reportedBy: 'Dr. Patel' });
+    }
   };
 
   return (
     <div style={styles.perfFormCard}>
-      <div style={styles.perfFormTitle}>Log injury</div>
+      <div style={styles.perfFormTitle}>{isEdit ? 'Edit injury' : 'Log injury'}</div>
 
       {/* Section: CORE */}
       <CollapsibleSection
@@ -10996,18 +11106,20 @@ function InjuryForm({ athleteId, onSave, onCancel }) {
           </FormField>
         )}
 
-        <FormField label="Current status">
-          <div style={styles.perfBtnRow}>
-            <button onClick={() => setStatus('modified')}
-              style={{ ...styles.perfPillBtn, ...(status === 'modified' ? styles.perfPillBtnActive : {}) }}>
-              Modified
-            </button>
-            <button onClick={() => setStatus('unavailable')}
-              style={{ ...styles.perfPillBtn, ...(status === 'unavailable' ? styles.perfPillBtnActive : {}) }}>
-              Unavailable
-            </button>
-          </div>
-        </FormField>
+        {!isEdit && (
+          <FormField label="Current status">
+            <div style={styles.perfBtnRow}>
+              <button onClick={() => setStatus('modified')}
+                style={{ ...styles.perfPillBtn, ...(status === 'modified' ? styles.perfPillBtnActive : {}) }}>
+                Modified
+              </button>
+              <button onClick={() => setStatus('unavailable')}
+                style={{ ...styles.perfPillBtn, ...(status === 'unavailable' ? styles.perfPillBtnActive : {}) }}>
+                Unavailable
+              </button>
+            </div>
+          </FormField>
+        )}
 
         <FormField label="Occurred on">
           <input type="date" style={styles.perfInput} value={occurredOn} onChange={e => setOccurredOn(e.target.value)} />
@@ -11019,7 +11131,8 @@ function InjuryForm({ athleteId, onSave, onCancel }) {
         </FormField>
       </CollapsibleSection>
 
-      {/* Section: CLINICAL */}
+      {canMedical && (<>
+      {/* Section: CLINICAL + IMAGING — hidden from practitioners without view_medical (D2/D3) */}
       <CollapsibleSection
         title="Clinical findings"
         kicker="MEDICAL-RESTRICTED"
@@ -11093,6 +11206,7 @@ function InjuryForm({ athleteId, onSave, onCancel }) {
           </>
         )}
       </CollapsibleSection>
+      </>)}
 
       {/* Section: PLAN */}
       <CollapsibleSection
@@ -11101,22 +11215,26 @@ function InjuryForm({ athleteId, onSave, onCancel }) {
         open={openSection === 'plan'}
         onToggle={() => setOpenSection(openSection === 'plan' ? null : 'plan')}
       >
-        <FormField label="Treatment plan">
-          <textarea style={styles.perfTextarea} rows="3" value={treatment}
-            onChange={e => setTreatment(e.target.value)}
-            placeholder="e.g. PEACE & LOVE. Manual therapy 2x/wk. Progressive loading day 7." />
-        </FormField>
+        {canMedical && (
+          <FormField label="Treatment plan">
+            <textarea style={styles.perfTextarea} rows="3" value={treatment}
+              onChange={e => setTreatment(e.target.value)}
+              placeholder="e.g. PEACE & LOVE. Manual therapy 2x/wk. Progressive loading day 7." />
+          </FormField>
+        )}
 
         <FormField label="Next follow-up">
           <input type="date" style={styles.perfInput} value={followUp}
             onChange={e => setFollowUp(e.target.value)} />
         </FormField>
 
-        <FormField label="Prevention notes">
-          <textarea style={styles.perfTextarea} rows="2" value={prevention}
-            onChange={e => setPrevention(e.target.value)}
-            placeholder="e.g. NHE program 3x/wk. Warm-up adjustments." />
-        </FormField>
+        {canMedical && (
+          <FormField label="Prevention notes">
+            <textarea style={styles.perfTextarea} rows="2" value={prevention}
+              onChange={e => setPrevention(e.target.value)}
+              placeholder="e.g. NHE program 3x/wk. Warm-up adjustments." />
+          </FormField>
+        )}
 
         <FormField label="Notes">
           <textarea style={styles.perfTextarea} rows="2" value={notes}
@@ -11126,7 +11244,7 @@ function InjuryForm({ athleteId, onSave, onCancel }) {
 
       <div style={styles.perfFormActions}>
         <button style={styles.perfCancelBtn} onClick={onCancel}>Cancel</button>
-        <button style={styles.perfSaveBtn} onClick={handleSave}>Save injury</button>
+        <button style={styles.perfSaveBtn} onClick={handleSave}>{isEdit ? 'Save changes' : 'Save injury'}</button>
       </div>
     </div>
   );
