@@ -1,7 +1,7 @@
 import { supabase } from './supabase';
 
-// Thin wrappers around Supabase Auth. Email + password only for M1 —
-// no password reset, email verification, or social login (out of scope).
+// Thin wrappers around Supabase Auth. Email + password, plus password reset
+// (pulled forward from M11). No email verification or social login.
 
 // display_name, default_role and title are stored in the auth user's metadata.
 // The handle_new_user() trigger (migration 0001) copies them into `profiles`.
@@ -27,15 +27,29 @@ export async function signOut() {
   return supabase.auth.signOut();
 }
 
+// Send a password-reset email. `redirectTo` must be an allowed Redirect URL in
+// Supabase (Auth → URL Configuration). When the user clicks the link, supabase-js
+// (detectSessionInUrl) parses the token and fires a PASSWORD_RECOVERY event.
+// Note: succeeds regardless of whether the email exists (no account enumeration).
+export async function resetPasswordForEmail(email, redirectTo) {
+  return supabase.auth.resetPasswordForEmail(email, { redirectTo });
+}
+
+// Set a new password for the user in the current (recovery) session.
+export async function updatePassword(newPassword) {
+  return supabase.auth.updateUser({ password: newPassword });
+}
+
 export async function getSession() {
   const { data } = await supabase.auth.getSession();
   return data.session;
 }
 
 // Subscribe to auth changes. Returns the Supabase subscription handle so the
-// caller can unsubscribe. Callback receives the session (or null).
+// caller can unsubscribe. Callback receives (session, event) — the event lets the
+// caller detect 'PASSWORD_RECOVERY' (reset link clicked) vs. a normal sign-in.
 export function onAuthStateChange(callback) {
-  return supabase.auth.onAuthStateChange((_event, session) => callback(session));
+  return supabase.auth.onAuthStateChange((event, session) => callback(session, event));
 }
 
 // Fetch the signed-in user's profile row. Used from M3 onward; M1 routing reads

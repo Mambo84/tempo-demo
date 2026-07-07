@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Activity, Users, ChevronRight, Plus, Check, AlertCircle, TrendingUp, TrendingDown, Minus, X, ArrowLeft, FileText, Filter } from 'lucide-react';
-import { signUp, signInWithPassword, signOut, getSession, onAuthStateChange } from './lib/auth';
+import { signUp, signInWithPassword, signOut, getSession, onAuthStateChange, resetPasswordForEmail, updatePassword } from './lib/auth';
 import { getMyAthlete, createAthlete, updateWellnessSettings } from './lib/data/athletes';
 import * as WorkoutsData from './lib/data/workouts';
 import * as WellnessData from './lib/data/wellness';
@@ -11873,6 +11873,12 @@ export default function App() {
   const [showSwitcher, setShowSwitcher] = useState(false);
   const [session, setSession] = useState(null);   // real Supabase session (gates the app)
   const [authChecked, setAuthChecked] = useState(false); // session resolved on load yet?
+  // reset link clicked → show ResetPasswordScreen. Seed from the URL hash on first
+  // paint (detectSessionInUrl clears it shortly after) so we never flash into the
+  // app; the PASSWORD_RECOVERY event below also sets it.
+  const [recoveryMode, setRecoveryMode] = useState(
+    () => typeof window !== 'undefined' && /type=recovery/.test(window.location.hash)
+  );
   const [auditLog, setAuditLog] = useState([]);
   // Real athlete's own DB profile (M3). Resolved for athlete-role users who came
   // from a real session (i.e. no demo persona athleteId). null = none yet → setup.
@@ -11939,8 +11945,11 @@ export default function App() {
       applySession(sess);
       setAuthChecked(true);
     });
-    const { data: sub } = onAuthStateChange(sess => {
+    const { data: sub } = onAuthStateChange((sess, event) => {
       if (!active) return;
+      // A reset link was clicked: supabase-js established a temporary recovery
+      // session. Route to the reset screen instead of into the app.
+      if (event === 'PASSWORD_RECOVERY') setRecoveryMode(true);
       applySession(sess);
       setAuthChecked(true);
     });
@@ -12019,8 +12028,19 @@ export default function App() {
 
   // Wait for the session to resolve on load before deciding what to show, so a
   // persisted session doesn't flash the login screen.
-  if (!authChecked) {
+  if (!authChecked && !recoveryMode) {
     return <div style={styles.root}><style>{globalCSS}</style></div>;
+  }
+
+  // Password reset: the user arrived via a reset link (recovery session). Show the
+  // set-new-password screen regardless of any session, until they finish or cancel.
+  if (recoveryMode) {
+    return (
+      <div style={styles.root}>
+        <style>{globalCSS}</style>
+        <ResetPasswordScreen onDone={() => setRecoveryMode(false)} />
+      </div>
+    );
   }
 
   // Real auth gate: no session → login / signup. A persisted session skips this.
@@ -12574,10 +12594,137 @@ function SignupFlow({ onComplete, onCancel }) {
 }
 
 
+// ResetPasswordScreen — set a new password from a recovery session (reset link).
+function ResetPasswordScreen({ onDone }) {
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e?.preventDefault?.();
+    setError(null);
+    if (password.length < 6) { setError('Password must be at least 6 characters.'); return; }
+    if (password !== confirm) { setError('Passwords do not match.'); return; }
+    setBusy(true);
+    const { error: authError } = await updatePassword(password);
+    if (authError) { setBusy(false); setError(authError.message); return; }
+    // Clear the recovery session + token hash so they sign in fresh.
+    await signOut();
+    try { window.history.replaceState(null, '', window.location.pathname); } catch { /* ignore */ }
+    setBusy(false);
+    setDone(true);
+  };
+
+  if (done) {
+    return (
+      <div style={styles.loginFrame}>
+        <div style={styles.loginInner}>
+          <div style={styles.loginMark}>◐</div>
+          <div style={styles.loginBrand}>tempo</div>
+          <div style={styles.loginTagline}>Password updated</div>
+          <div style={{ textAlign: 'center', color: '#6b6456', fontSize: 13, margin: '10px 0 18px' }}>
+            Your password has been changed. Sign in with your new password.
+          </div>
+          <button style={styles.loginSubmit} onClick={onDone}>Back to sign in</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={styles.loginFrame}>
+      <div style={styles.loginInner}>
+        <div style={styles.loginMark}>◐</div>
+        <div style={styles.loginBrand}>tempo</div>
+        <div style={styles.loginTagline}>Set a new password</div>
+        <form onSubmit={handleSubmit} style={styles.loginForm}>
+          <div style={styles.loginField}>
+            <label style={styles.loginLabel}>New password</label>
+            <input type="password" autoComplete="new-password" style={styles.loginInput}
+              value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" />
+          </div>
+          <div style={styles.loginField}>
+            <label style={styles.loginLabel}>Confirm new password</label>
+            <input type="password" autoComplete="new-password" style={styles.loginInput}
+              value={confirm} onChange={e => setConfirm(e.target.value)} placeholder="••••••••" />
+          </div>
+          {error && <div style={styles.loginError}>{error}</div>}
+          <button type="submit" style={{ ...styles.loginSubmit, opacity: busy ? 0.6 : 1 }} disabled={busy}>
+            {busy ? 'Saving…' : 'Update password'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ForgotPassword — request a reset email. Shown from LoginScreen.
+function ForgotPassword({ onBack }) {
+  const [email, setEmail] = useState('');
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e?.preventDefault?.();
+    setError(null);
+    if (!email.trim()) { setError('Enter your email.'); return; }
+    setBusy(true);
+    // redirectTo is the app origin; the PASSWORD_RECOVERY event drives the reset UI.
+    const { error: authError } = await resetPasswordForEmail(email.trim(), window.location.origin);
+    setBusy(false);
+    if (authError) { setError(authError.message); return; }
+    setSent(true);   // shown regardless of whether the account exists (no enumeration)
+  };
+
+  if (sent) {
+    return (
+      <div style={styles.loginFrame}>
+        <div style={styles.loginInner}>
+          <div style={styles.loginMark}>◐</div>
+          <div style={styles.loginBrand}>tempo</div>
+          <div style={styles.loginTagline}>Check your email</div>
+          <div style={{ textAlign: 'center', color: '#6b6456', fontSize: 13, margin: '10px 0 18px' }}>
+            If that email has an account, we've sent a link to reset your password.
+          </div>
+          <button style={styles.loginSubmit} onClick={onBack}>Back to sign in</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={styles.loginFrame}>
+      <div style={styles.loginInner}>
+        <div style={styles.loginMark}>◐</div>
+        <div style={styles.loginBrand}>tempo</div>
+        <div style={styles.loginTagline}>Reset your password</div>
+        <form onSubmit={handleSubmit} style={styles.loginForm}>
+          <div style={styles.loginField}>
+            <label style={styles.loginLabel}>Email</label>
+            <input type="email" autoComplete="username" style={styles.loginInput}
+              value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" />
+          </div>
+          {error && <div style={styles.loginError}>{error}</div>}
+          <button type="submit" style={{ ...styles.loginSubmit, opacity: busy ? 0.6 : 1 }} disabled={busy}>
+            {busy ? 'Sending…' : 'Send reset link'}
+          </button>
+          <div style={styles.loginLinks}>
+            <a style={styles.loginLink} onClick={onBack}>Back to sign in</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showSignup, setShowSignup] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -12607,6 +12754,10 @@ function LoginScreen() {
         onCancel={() => setShowSignup(false)}
       />
     );
+  }
+
+  if (showForgot) {
+    return <ForgotPassword onBack={() => setShowForgot(false)} />;
   }
 
   return (
@@ -12647,6 +12798,7 @@ function LoginScreen() {
           </button>
 
           <div style={styles.loginLinks}>
+            <a style={styles.loginLink} onClick={() => setShowForgot(true)}>Forgot password?</a>
             <a style={styles.loginLink} onClick={() => setShowSignup(true)}>Don't have an account? Create one</a>
           </div>
         </form>

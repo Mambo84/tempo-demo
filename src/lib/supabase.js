@@ -18,6 +18,8 @@ export const supabase = createClient(url, key, {
   auth: {
     persistSession: true,     // keeps the session in localStorage across reloads
     autoRefreshToken: true,
-    detectSessionInUrl: false, // no magic links / OAuth in M1 (email + password only)
+    detectSessionInUrl: true,  // needed for password reset: parses the recovery
+                               // token from the email link's URL hash and fires a
+                               // PASSWORD_RECOVERY auth event (no magic links / OAuth).
   },
 });

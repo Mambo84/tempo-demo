@@ -14,6 +14,16 @@ Five lines per session: what shipped, what didn't, what's open, next step, brief
 
 ---
 
+## 2026-07-07 — Password reset (pull-forward from M11, before M8)
+
+- **Why now:** setting Jethro up for real production use — he'll need password reset before the app is sent to him. Small pull-forward from M11's scope, not a new milestone.
+- **Shipped:** `supabase.js` `detectSessionInUrl: true` (parses the recovery token from the email link → fires `PASSWORD_RECOVERY`). `auth.js` gains `resetPasswordForEmail(email, redirectTo)` + `updatePassword(newPassword)`; `onAuthStateChange` now passes the event. `App.jsx`: `recoveryMode` state (seeded from the URL hash on first paint so no flash into the app; also set by the `PASSWORD_RECOVERY` event) gates a new `ResetPasswordScreen`; `LoginScreen` gets a "Forgot password?" link → `ForgotPassword` (email → "check your email"). After a successful reset it signs out → login. No router (SPA), so the reset screen is event-driven, not a `/reset` route; `redirectTo = window.location.origin`.
+- **Manual config (like the M1 email-confirm step):** Supabase Auth → URL Configuration → **Redirect URLs** must allow `http://localhost:5173/**` and `https://tempo-demo-mu.vercel.app/**`, and **Site URL** = production. Done for localhost; prod to be confirmed on the post-deploy smoke test.
+- **Decisions:** event-driven screen not a URL route (no router); after reset → sign out then login (clean, not auto-login); no account enumeration ("if that email has an account…"); default Supabase templates (ugly, land in spam — **M11 polishes templates**, tracked). Min password 6 + confirm-match.
+- **Verified:** localhost round-trip end-to-end (forgot → email → reset link → new password → sign out → sign in). Signup + normal login unchanged. Build green, App.jsx at the 50-error baseline. **Next: M8** (after Brad's production smoke test of the reset redirect config).
+
+---
+
 ## 2026-07-07 — Milestone 7 (Part 2): Injuries collaborative editing (complete)
 
 - **Shipped — server (`0013_injury_collab.sql`):** (1) `injuries_autolink_concussion` trigger — `AFTER INSERT OR UPDATE OF injury_type`, keys ONLY on `injury_type='Concussion'` (no bodyRegion/diagnosis heuristics, so a "head" self-report never auto-creates), idempotent via the `linked_concussion_id` guard, back-links both sides of the cyclic FK. (2) `set_rtp_stage(injury, index, achieved, by)` RPC — atomic per-element `jsonb_set` (kills the whole-array last-write-wins clobber), server-stamps `completedBy`/`completedAt`/`date`, clears on undo. Both `SECURITY INVOKER` so `edit_injuries` RLS still governs. `0014_verify_concussion_trigger.sql` — self-cleaning DO block (begin/rollback) asserting classify-later, idempotency, and create-path; ran clean.
