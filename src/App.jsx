@@ -6913,6 +6913,11 @@ function PractitionerApp({ currentUser, isRealPractitioner, auditLog, recordAudi
                             {r.wellAvg !== null ? r.wellAvg.toFixed(1) : '—'}
                             <span style={styles.aStatUnit}> /7</span>
                           </div>
+                          {r.wellAvg !== null && (
+                            <div style={{ fontSize: 11, letterSpacing: '0.03em', marginTop: 2, color: WELLNESS_TONE[wellnessLabel(r.wellAvg)] || '#8a8275' }}>
+                              {wellnessLabel(r.wellAvg)}
+                            </div>
+                          )}
                         </div>
                       </div>
 
