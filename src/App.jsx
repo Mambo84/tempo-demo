@@ -136,6 +136,17 @@ const wellnessAbbr = (c) =>
   `F${c.fatigue ?? '—'} · S${c.soreness ?? '—'} · Sl${c.sleep ?? '—'} · ` +
   `St${c.stress ?? '—'} · M${c.mood ?? '—'} · Mt${c.motivation ?? '—'}`;
 
+// Single source of truth for wellness classification (M11 Phase 1). `avg` is on
+// the 1–7 scale, higher = worse; 7-day window everywhere the label is shown.
+// Fixed thresholds for now — individual rolling-baseline z-scores are planned as
+// M8b (see build-brief.md). Every classification point (labels, flag, colours)
+// reads from here so the athlete and practitioner never disagree on the same data.
+const wellnessLabel = (avg) =>
+  avg == null ? null : avg <= 3.0 ? 'Stable' : avg <= 4.5 ? 'Elevated' : 'Strained';
+// Heat colour per tier. Stable is neutral (not green) to keep numbers calm;
+// Elevated amber, Strained red. Used for practitioner numbers/chips.
+const WELLNESS_TONE = { Stable: '#1a1a1a', Elevated: '#d4a017', Strained: '#c8472b' };
+
 // ============================================================
 // Date helpers
 // ============================================================
@@ -2091,7 +2102,7 @@ function AthleteApp({ currentUser, demoAthleteId, realAthlete, auditLog, recordA
     if (!todayWorkouts.length && !todayCheckin && wellnessDue) return 'Open the day with a quick wellness check-in.';
     if (acwr && acwr > 1.5) return 'Your workload has increased quickly this week. Consider how you pace the next few sessions.';
     if (monotony && monotony > 2 && weekly.total > 200) return 'Your training week has had little variation. Mixing intensities may help.';
-    if (wellnessAvg && wellnessAvg > 4 && !wellnessOff) return 'Recovery markers are trending down. Notice how you feel over the next few sessions.';
+    if (wellnessLabel(wellnessAvg) === 'Strained' && !wellnessOff) return 'Recovery markers are trending down. Notice how you feel over the next few sessions.';
     if (weekly.total > 0 && acwr && acwr < 0.7) return 'Workload is lighter than your recent baseline — a good week to build steadily.';
     if (todayWorkouts.length && !todayCheckin && wellnessDue) return 'A quick wellness check-in rounds out the day.';
     return 'Training load is stable. Stay consistent.';
@@ -2266,7 +2277,7 @@ function AthleteApp({ currentUser, demoAthleteId, realAthlete, auditLog, recordA
             {wellnessAvg !== null ? (
               <>
                 <div style={styles.aBigNum}>
-                  {wellnessAvg < 2 ? 'Fresh' : wellnessAvg < 3.5 ? 'Settled' : wellnessAvg < 5 ? 'Strained' : 'Drained'}
+                  {wellnessLabel(wellnessAvg)}
                 </div>
                 <div style={styles.aSub2}>Based on {checkins.filter(c => {
                   const cd = new Date(c.date), end = new Date(todayStr), cutoff = new Date(end);
@@ -6468,7 +6479,7 @@ function PractitionerApp({ currentUser, isRealPractitioner, auditLog, recordAudi
     if (mon && mon > 2 && weekly.total > 200) flags.push({ type: 'monotony', label: 'Low variation' });
     // Wellness-related flags only meaningful if the athlete is doing check-ins
     const wellnessFreq = a.wellnessSettings?.frequency || 'daily';
-    if (wellAvg && wellAvg > 4 && wellnessFreq !== 'off') flags.push({ type: 'wellness', label: 'Wellness ↓' });
+    if (wellnessLabel(wellAvg) === 'Strained' && wellnessFreq !== 'off') flags.push({ type: 'wellness', label: 'Wellness ↓' });
     if (dayssince !== null && dayssince > 4) flags.push({ type: 'missing', label: 'Missing data' });
     // Compliance flag: scale expectation to chosen frequency.
     // 'off' is never low-compliance (opted out is a choice, not a problem).
@@ -6897,7 +6908,7 @@ function PractitionerApp({ currentUser, isRealPractitioner, auditLog, recordAudi
                           <div style={styles.aStatLabel}>Wellness</div>
                           <div style={{
                             ...styles.aStatValue,
-                            color: r.wellAvg > 4 ? '#c8472b' : '#1a1a1a'
+                            color: WELLNESS_TONE[wellnessLabel(r.wellAvg)] || '#1a1a1a'
                           }}>
                             {r.wellAvg !== null ? r.wellAvg.toFixed(1) : '—'}
                             <span style={styles.aStatUnit}> /7</span>
@@ -9259,7 +9270,9 @@ function AthleteDetail({ row, notes, onAddNote, perfData, currentUser, links, re
             <DetailStat label="ACWR (7:28)" value={acwr ? acwr.toFixed(2) : '—'} warn={acwr > 1.5} />
             <DetailStat label="Monotony" value={mon ? mon.toFixed(2) : '—'} warn={mon > 2} />
             <DetailStat label="Strain" value={strain ? strain.toLocaleString() : '—'} />
-            <DetailStat label="Wellness (7d)" value={wellAvg !== null ? wellAvg.toFixed(1) : '—'} unit="/7" warn={wellAvg > 4} />
+            <DetailStat label="Wellness (7d)" value={wellAvg !== null ? wellAvg.toFixed(1) : '—'} unit="/7"
+              warn={wellnessLabel(wellAvg) === 'Strained'}
+              tag={wellAvg !== null ? { label: wellnessLabel(wellAvg), color: WELLNESS_TONE[wellnessLabel(wellAvg)] } : null} />
             <DetailStat label="Sessions /28d" value={workouts.length} />
           </div>
 
@@ -9392,7 +9405,7 @@ function AthleteDetail({ row, notes, onAddNote, perfData, currentUser, links, re
                         {wellnessAbbr(c)}
                       </div>
                     </div>
-                    <div style={{ ...styles.pSessionLoad, color: (avg != null && avg > 4) ? '#c8472b' : '#1a1a1a' }}>
+                    <div style={{ ...styles.pSessionLoad, color: WELLNESS_TONE[wellnessLabel(avg)] || '#1a1a1a' }}>
                       {avg != null ? avg.toFixed(1) : '—'}<span style={styles.pUnit}>/7</span>
                     </div>
                   </div>
@@ -11706,13 +11719,14 @@ function flagExplain(f, row) {
   }
 }
 
-function DetailStat({ label, value, unit, warn }) {
+function DetailStat({ label, value, unit, warn, tag }) {
   return (
     <div style={styles.detailStat}>
       <div style={styles.detailStatLabel}>{label}</div>
       <div style={{ ...styles.detailStatVal, color: warn ? '#c8472b' : '#1a1a1a' }}>
         {value}{unit && <span style={styles.detailStatUnit}>{unit}</span>}
       </div>
+      {tag && <div style={{ fontSize: 11, color: tag.color, letterSpacing: '0.03em', marginTop: 2 }}>{tag.label}</div>}
     </div>
   );
 }
@@ -11767,7 +11781,7 @@ function WellnessChart({ data, height = 100 }) {
         />
       )}
       {pts.map((p, i) => p.y !== null && (
-        <circle key={i} cx={p.x} cy={p.y} r="2" fill={p.score > 4 ? '#c8472b' : '#1a1a1a'} />
+        <circle key={i} cx={p.x} cy={p.y} r="2" fill={WELLNESS_TONE[wellnessLabel(p.score)] || '#1a1a1a'} />
       ))}
     </svg>
   );
