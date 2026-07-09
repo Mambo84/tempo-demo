@@ -161,6 +161,13 @@ sharing are built.
   `invited_email` until the user signs up). `UNIQUE(athlete_id, user_id)` still
   holds; multiple NULLs are allowed by Postgres.
 
+## Planned schema work (post-MVP)
+
+- **M8b — individualised wellness classification:** the z-score approach will need
+  either a `wellness_baselines` table or cached rolling mean/SD columns on
+  `athletes` (trailing 21–28 days). Not built yet; decided when M8b starts — see
+  build-brief.md §M8b. Flagged here so schema-future-us expects it.
+
 ## Performance note (brief Risk 1)
 
 The per-injury `sharing.excluded` membership test (`jsonb ?` against

@@ -14,6 +14,21 @@ Five lines per session: what shipped, what didn't, what's open, next step, brief
 
 ---
 
+## 2026-07-09 — M11 pull-forwards (practitioner mgmt) + wellness fixes
+
+- **Shipped (3 commits):** `f2cb9f3` M11 pull-forwards bundle, `3c764f1` wellness Phase-1 classification, plus this docs sweep. All on `main` → auto-deployed to production.
+- **Gap 1 — athlete edits permissions** ("Who has access"): `links.updateLinkPermissions` (athlete is owner → RLS admits the update); expandable grouped toggles in `AthleteAccessView` (`ATHLETE_PERM_GROUPS`); `view_gps`+`view_hr` → one "Performance data" toggle; `view_export`/`view_reports` omitted; role label unchanged. Lets Brad run as physio **and** grant `edit_workouts` without revoke/re-invite.
+- **Gap 2 — practitioner "Remove athlete"** (symmetric revoke): migration `0015` `revoke_own_link` (SECURITY DEFINER, scoped to `user_id=auth.uid()` + active — a non-admin practitioner can't revoke via direct UPDATE since links UPDATE = `has_athlete_admin`; scoped RPC avoids the self-escalation surface of broadening the policy). `0016` verify (impersonation, self-rollback). Button at the bottom of the Overview tab + confirm. **Verified live** after running `0015` in Supabase (we'd missed it first); remove + re-invite round-trip confirmed on Brad↔Jethro.
+- **Wellness — two distinct null rules (don't conflate them again):**
+  - *Disabled settings fields* (M4, `ef642f9`): an athlete switches wellness questions off; those fields persist `null`. `calc.wellnessAvg` (7-day aggregate) divides by the count of **answered** values across the window so disabling questions doesn't drag the average toward "Stable". **Scope: the rolling multi-entry average.**
+  - *Per-entry nulls* (`f2cb9f3`): a single check-in can have `null` fields even with all six enabled — Excel imports, partial submissions. `calc.wellnessRowAvg` divides by the non-null fields **on that one row** (old inline `sum/6` was `NaN`). `wellnessAbbr` renders `null` as "—" (a real 0 still shows 0). **Scope: any single-entry average.**
+  - Same principle (skip `null`, divide by what was answered); they differ only in **scope — window vs. one row.**
+- **Wellness Phase 1 classification** (`3c764f1`): one `wellnessLabel()` helper (Stable ≤3.0 / Elevated ≤4.5 / Strained >4.5) is now the single source for every classification point — killed the athlete-vs-practitioner label divergence (was Fresh/Settled/Strained/Drained @ 2/3.5/5 vs an ad-hoc `>4` warn). Practitioner surfaces the same word; athlete label kept text-only/neutral for calm. Phase 2 (z-score vs individual baseline) is **planned as M8b** — see build-brief.md §M8b + schema.md (may add `wellness_baselines` or cached rolling stats).
+- **`backend-mvp` branch — keep for now, delete later:** intentionally **not** deleted. Keeping it as a reference point post-cutover; revisit deletion after a few more weeks on `main` with no need to look back. (Noted so it doesn't get orphaned/forgotten.)
+- **Next:** M8 scope reconcile still owed (much of M8's collaborative editing already shipped in M7 Part 2) before M9. Also parked: M11 audit-log proper (permission changes + revocations should become `audit_log` write points then), M7 Group B live check, email-template polish.
+
+---
+
 ## 2026-07-07 — Password reset (pull-forward from M11, before M8)
 
 - **Why now:** setting Jethro up for real production use — he'll need password reset before the app is sent to him. Small pull-forward from M11's scope, not a new milestone.

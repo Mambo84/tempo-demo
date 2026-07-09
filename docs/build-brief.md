@@ -573,6 +573,40 @@ Milestones are ordered for dependency, not priority. Don't reorder without think
 - Athlete reverses the tick, Brad sees the reversal
 - Status change from "out" to "returned" requires confirmation and records who made the change
 
+### Milestone 8b (planned — post-MVP) — Individualised wellness classification
+
+**Status:** planned; NOT in the 12-milestone MVP. Wellness shipped in M4; a single
+fixed-threshold classifier was unified across the athlete and practitioner sides in
+the M11 pull-forward (`wellnessLabel()`: Stable ≤ 3.0 / Elevated ≤ 4.5 / Strained
+> 4.5, on the 1–7 higher-is-worse scale). This milestone replaces the *fixed*
+thresholds with per-athlete ones.
+
+**Goal:** Classify wellness against each athlete's own rolling baseline, so
+"elevated" means "elevated *for this athlete*" rather than against a group cut-off.
+
+**Why (better science, not tonight's problem):** subjective wellness/RPE measures
+are strongly individual — absolute values differ between athletes, so fixed
+thresholds mislabel both calm-baseline and high-baseline athletes. The evidence
+favours within-athlete change vs. a personal rolling mean/SD (z-score):
+- Hooper & Mackinnon (1995) — subjective markers for overtraining monitoring.
+- Saw, Main & Gastin (2016) — self-report measures track training response well,
+  but interpretation should be individualised.
+- Thorpe et al. (2017) — daily monitoring is most informative as change against an
+  athlete's own norm, not group cut-offs.
+
+**Tasks (when built):**
+- Rolling baseline per athlete: mean + SD over a trailing 21–28 days.
+- z-score classification; band cut-offs in SD units (e.g. > 1 SD Elevated,
+  > 2 SD Strained), tuned with Brad.
+- Cold-start fallback: an athlete's first ~21 days have no stable baseline → fall
+  back to the M11 fixed thresholds, with a UI hint ("baseline still being
+  established").
+- Keep `wellnessLabel()` as the single classification entry point — swap the
+  internals, leave every caller unchanged.
+
+**Schema implications:** may add a `wellness_baselines` table or cache rolling
+mean/SD on `athletes` (TBD — see schema.md). Not decided until built.
+
 ### Milestone 9 — Performance tests + flags
 
 **Goal:** Test results persist. Significant deviation flag works.
