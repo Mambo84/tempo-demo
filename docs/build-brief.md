@@ -618,6 +618,21 @@ composite-status vocabulary, e.g. "OK / Watch / Alert" or similar) is the proper
 fix, deferred until real use surfaces whether the collision actually causes
 reading errors in practice.
 
+### Post-MVP (M11 phase 2) — Real email invitations
+
+**Status:** planned; the copyable invite link is the pilot stand-in.
+
+Invitations currently notify no one by email — the inviter copies a
+`…/#invite=<id>` link and shares it themselves (WhatsApp/Slack/text). That was a
+deliberate call over Supabase's built-in email, which is **auth-only** (can't send
+arbitrary transactional mail) and capped at **~2 emails/hour** — a dead end.
+
+Real email invites need a transactional provider (e.g. Resend) **and a verified
+custom domain** for deliverability (SPF/DKIM) — the default/`resend.dev` sender
+lands in spam. So this waits until there's a real domain: then an Edge Function
+(client-triggered after `createInvitation`, service-role + provider key server-side)
+sends the notification, keeping the in-app banner + the copyable link as fallbacks.
+
 ### Milestone 9 — Performance tests + flags
 
 **Goal:** Test results persist. Significant deviation flag works.
