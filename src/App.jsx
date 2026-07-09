@@ -113,8 +113,28 @@ const calc = {
     }
     if (!count) return null;
     return sum / count;
+  },
+
+  // Average of the ANSWERED (non-null) wellness fields on a SINGLE check-in.
+  // Per-row companion to wellnessAvg: real data has null fields on individual
+  // entries (Excel imports, partial submissions) even when all six are enabled in
+  // settings — so `(3+3+4+4+4+null)/6` was NaN. null = not answered → skip it.
+  wellnessRowAvg: (c) => {
+    const fields = ['fatigue', 'soreness', 'sleep', 'stress', 'mood', 'motivation'];
+    let sum = 0, count = 0;
+    for (const f of fields) {
+      const v = c?.[f];
+      if (v != null) { sum += v; count += 1; }
+    }
+    return count ? sum / count : null;
   }
 };
+
+// Null-safe one-line wellness field summary for check-in logs. A missing value
+// renders as "—" (e.g. "Mt—") rather than a bare label; a real 0 still shows "0".
+const wellnessAbbr = (c) =>
+  `F${c.fatigue ?? '—'} · S${c.soreness ?? '—'} · Sl${c.sleep ?? '—'} · ` +
+  `St${c.stress ?? '—'} · M${c.mood ?? '—'} · Mt${c.motivation ?? '—'}`;
 
 // ============================================================
 // Date helpers
@@ -1783,6 +1803,23 @@ function AthleteApp({ currentUser, demoAthleteId, realAthlete, auditLog, recordA
     showToast('Access revoked');
   };
 
+  // Athlete fine-tunes a linked user's permissions (M11 pull-forward). Optimistic
+  // local update, then persist; the athlete is owner so RLS admits the write.
+  const updateLinkPermissions = async (linkId, permissions) => {
+    if (isRealAthlete) {
+      setLinks(prev => prev.map(l => (l.id === linkId ? { ...l, permissions } : l))); // optimistic
+      try {
+        const updated = await LinksData.updateLinkPermissions(linkId, permissions);
+        setLinks(prev => prev.map(l => (l.id === updated.id ? { ...l, permissions: updated.permissions } : l)));
+      } catch (e) {
+        console.error('updateLinkPermissions', e);
+        showToast('Could not update access');
+      }
+      return;
+    }
+    setLinks(links.map(l => (l.id === linkId ? { ...l, permissions } : l)));
+  };
+
   const saveWorkout = async (w) => {
     if (isRealAthlete) {
       try {
@@ -2436,6 +2473,7 @@ function AthleteApp({ currentUser, demoAthleteId, realAthlete, auditLog, recordA
           onInvitePractitioner={invitePractitioner}
           onCancelInvitation={cancelSentInvitation}
           onRevokeLink={revokeLink}
+          onUpdateLinkPermissions={updateLinkPermissions}
           onBack={() => setView('home')}
         />
       );
@@ -2760,7 +2798,7 @@ function History({ workouts, checkins, onBack, onEditWorkout, onAddPast }) {
               <div style={styles.histBody}>
                 <div style={styles.histTitle}>Wellness check-in</div>
                 <div style={styles.histMeta}>
-                  F{it.fatigue} · S{it.soreness} · Sl{it.sleep} · St{it.stress} · M{it.mood} · Mt{it.motivation}
+                  {wellnessAbbr(it)}
                 </div>
               </div>
             )}
@@ -3772,8 +3810,9 @@ function AthleteFiles({ files, onSave, onToggleShared, onDelete, onBack }) {
 // with a plain-language permission summary + revoke. Contact-sharing controls
 // remain deferred to a later milestone.
 // ============================================================
-function AthleteAccessView({ links, sentInvitations = [], onInvitePractitioner, onCancelInvitation, onRevokeLink, onBack }) {
+function AthleteAccessView({ links, sentInvitations = [], onInvitePractitioner, onCancelInvitation, onRevokeLink, onUpdateLinkPermissions, onBack }) {
   const [confirmRevoke, setConfirmRevoke] = useState(null);
+  const [expandedLink, setExpandedLink] = useState(null); // link whose permission toggles are open
   const [showInvite, setShowInvite] = useState(false);
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('sc_coach');
@@ -3786,6 +3825,16 @@ function AthleteAccessView({ links, sentInvitations = [], onInvitePractitioner, 
 
   const grantSummary = (perms) =>
     grantedPermLabels(perms).join(' · ') || 'Profile';
+
+  // Toggle a permission item on a link. A multi-key item (Performance data =
+  // view_gps + view_hr) moves its keys together: on if any is set; toggling flips
+  // all of them. Persists the whole permissions JSON via the athlete's handler.
+  const toggleItemPerm = (link, item) => {
+    const on = item.keys.some(k => link.permissions?.[k]);
+    const next = { ...link.permissions };
+    item.keys.forEach(k => { next[k] = !on; });
+    onUpdateLinkPermissions(link.id, next);
+  };
 
   const sendInvite = async (e) => {
     e?.preventDefault?.();
@@ -3903,6 +3952,52 @@ function AthleteAccessView({ links, sentInvitations = [], onInvitePractitioner, 
               <div style={{ fontSize: 12, opacity: 0.55, marginTop: 8 }}>
                 Can see: {grantSummary(link.permissions)}
               </div>
+
+              <button
+                onClick={() => setExpandedLink(expandedLink === link.id ? null : link.id)}
+                style={{ ...styles.linkBtn, marginTop: 8, padding: 0 }}
+              >
+                {expandedLink === link.id ? 'Done adjusting' : 'Adjust access'}
+              </button>
+
+              {expandedLink === link.id && (
+                <div style={{ marginTop: 12, borderTop: '1px solid #efeadd', paddingTop: 12 }}>
+                  <div style={{ fontSize: 12, opacity: 0.55, marginBottom: 12 }}>
+                    Profile (name, position) is always visible. {ROLE_LABELS[link.role] || link.role} is their role;
+                    changing these only adjusts what they can see or do.
+                  </div>
+                  {ATHLETE_PERM_GROUPS.map(group => (
+                    <div key={group.group} style={{ marginBottom: 14 }}>
+                      <div style={{ ...styles.loginLabel, marginBottom: 6 }}>{group.group}</div>
+                      {group.items.map(item => {
+                        const on = item.keys.some(k => link.permissions?.[k]);
+                        return (
+                          <div key={item.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 0' }}>
+                            <span style={{ fontSize: 14, color: item.sensitive ? '#a2542b' : '#3a3428' }}>
+                              {item.label}
+                            </span>
+                            <button
+                              onClick={() => toggleItemPerm(link, item)}
+                              aria-label={`${item.label}: ${on ? 'on' : 'off'}`}
+                              aria-pressed={on}
+                              style={{
+                                width: 44, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer',
+                                background: on ? '#3a8a4d' : '#d8cfbb', position: 'relative', flexShrink: 0,
+                                transition: 'background 0.15s', padding: 0,
+                              }}
+                            >
+                              <span style={{
+                                position: 'absolute', top: 3, left: on ? 21 : 3, width: 20, height: 20,
+                                borderRadius: '50%', background: '#fff', transition: 'left 0.15s',
+                              }} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           ))
         )}
@@ -5686,6 +5781,28 @@ const permsForRole = (role) => (getSeedData().PERM_TEMPLATES || {})[role] || {};
 const grantedPermLabels = (perms) =>
   Object.keys(PERM_LABELS).filter(k => perms?.[k]).map(k => PERM_LABELS[k]);
 
+// Athlete-editable permission toggles for "Who has access" (M11 pull-forward).
+// Each item may map to one or more permission keys (view_gps + view_hr collapse
+// into one "Performance data" toggle for athlete simplicity — practitioners still
+// see the underlying labels via role templates). view_export/view_reports are
+// intentionally omitted (data extraction, not the ongoing relationship).
+// view_basic is always-on (profile) and shown as a fixed row, not a toggle.
+const ATHLETE_PERM_GROUPS = [
+  { group: 'Can see', items: [
+    { keys: ['view_workouts'], label: 'Training data' },
+    { keys: ['view_wellness'], label: 'Wellness check-ins' },
+    { keys: ['view_injuries'], label: 'Injury history' },
+    { keys: ['view_medical'], label: 'Medical details', sensitive: true },
+    { keys: ['view_gps', 'view_hr'], label: 'Performance data (GPS, heart rate)' },
+    { keys: ['view_notes'], label: 'Notes from other staff' },
+  ] },
+  { group: 'Can contribute', items: [
+    { keys: ['edit_workouts'], label: 'Edit workouts' },
+    { keys: ['edit_injuries'], label: 'Update injury record', sensitive: true },
+    { keys: ['edit_notes'], label: 'Leave notes' },
+  ] },
+];
+
 // ============================================================
 // Practitioner → athlete invite (M5). Practitioner enters the athlete's email
 // and picks a role; permissions come from PERM_TEMPLATES[role]. Creates a pending
@@ -6252,6 +6369,30 @@ function PractitionerApp({ currentUser, isRealPractitioner, auditLog, recordAudi
     ));
   };
 
+  // Practitioner removes an athlete from their roster (M11 pull-forward). Revokes
+  // their own link via the revoke_own_link RPC, drops the athlete from state, and
+  // returns to the roster. Symmetric with athlete-side revoke (both see the link go).
+  const removeAthlete = async (athleteId) => {
+    const link = links.find(l => l.athleteId === athleteId);
+    if (isRealPractitioner) {
+      try {
+        if (link) await LinksData.revokeOwnLink(link.id);
+        setAthletes(prev => prev.filter(a => a.id !== athleteId));
+        setLinks(prev => prev.filter(l => l.athleteId !== athleteId));
+        setSelectedAthlete(null);
+        showToast('Athlete removed');
+      } catch (e) {
+        console.error('removeAthlete', e);
+        showToast('Could not remove athlete');
+      }
+      return;
+    }
+    setAthletes(prev => prev.filter(a => a.id !== athleteId));
+    setLinks(prev => prev.filter(l => l.athleteId !== athleteId));
+    setSelectedAthlete(null);
+    showToast('Athlete removed');
+  };
+
   // Merge GPS / fitness data uploaded as multiple rows
   // Each row already has an athleteId (resolved) and a date
   const mergeUploadedSessions = (rows, opts) => {
@@ -6454,6 +6595,7 @@ function PractitionerApp({ currentUser, isRealPractitioner, auditLog, recordAudi
         links={links}
         recordAudit={recordAudit}
         onBack={() => setSelectedAthlete(null)}
+        onRemoveAthlete={() => removeAthlete(row.athlete.id)}
       />
     );
   }
@@ -9029,9 +9171,10 @@ function NoteComposer({ onSave, currentUser, canMedical }) {
 }
 
 
-function AthleteDetail({ row, notes, onAddNote, perfData, currentUser, links, recordAudit, onBack }) {
+function AthleteDetail({ row, notes, onAddNote, perfData, currentUser, links, recordAudit, onBack, onRemoveAthlete }) {
   const [tab, setTab] = useState('overview');
   const [showMedical, setShowMedical] = useState(false); // toggle for medical-restricted view
+  const [confirmRemove, setConfirmRemove] = useState(false); // "Remove athlete" confirmation
   const { athlete, weekly, acwr, mon, wellAvg, workouts, checkins } = row;
   const strain = calc.strain(workouts, today());
 
@@ -9060,7 +9203,7 @@ function AthleteDetail({ row, notes, onAddNote, perfData, currentUser, links, re
     d.setDate(end.getDate() - i);
     const ds = d.toISOString().slice(0, 10);
     const c = checkins.find(x => x.date === ds);
-    const score = c ? (c.fatigue + c.soreness + c.sleep + c.stress + c.mood + c.motivation) / 6 : null;
+    const score = calc.wellnessRowAvg(c); // null-safe: skips unanswered fields, null if none
     wellnessDays.push({ date: ds, score });
   }
 
@@ -9177,6 +9320,35 @@ function AthleteDetail({ row, notes, onAddNote, perfData, currentUser, links, re
             </div>
             <WellnessChart data={wellnessDays} height={100} />
           </div>
+
+          {/* Remove athlete — destructive, kept at the bottom (not the header) to
+              avoid accidental taps next to the back button. */}
+          {onRemoveAthlete && (
+            <div style={{ marginTop: 28, paddingTop: 16, borderTop: '1px solid #efeadd' }}>
+              {confirmRemove ? (
+                <div style={{ background: '#fdf6f3', border: '1px solid #e8c9bd', borderRadius: 12, padding: 14 }}>
+                  <div style={{ fontSize: 13, color: '#3a3428', marginBottom: 12 }}>
+                    You&apos;ll no longer see {athlete.name}&apos;s data. They can invite you again if needed. Continue?
+                  </div>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <button onClick={() => onRemoveAthlete()}
+                      style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: '#c8472b', color: '#fff', fontFamily: 'inherit', fontSize: 13, cursor: 'pointer' }}>
+                      Remove athlete
+                    </button>
+                    <button onClick={() => setConfirmRemove(false)}
+                      style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #e0d9c8', background: 'transparent', fontFamily: 'inherit', fontSize: 13, color: '#6b6456', cursor: 'pointer' }}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button onClick={() => setConfirmRemove(true)}
+                  style={{ background: 'transparent', border: '1px solid #e0d9c8', borderRadius: 8, padding: '8px 14px', fontFamily: 'inherit', fontSize: 13, color: '#c8472b', cursor: 'pointer' }}>
+                  Remove athlete
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -9211,17 +9383,17 @@ function AthleteDetail({ row, notes, onAddNote, perfData, currentUser, links, re
             </div>
             <div style={{ maxHeight: 380, overflowY: 'auto' }}>
               {checkins.slice().sort((a, b) => b.date.localeCompare(a.date)).map(c => {
-                const avg = (c.fatigue + c.soreness + c.sleep + c.stress + c.mood + c.motivation) / 6;
+                const avg = calc.wellnessRowAvg(c);
                 return (
                   <div key={c.id} style={styles.pSessionRow}>
                     <div style={{ flex: 1 }}>
                       <div style={styles.pSessionTitle}>{fmtDate(c.date)}</div>
                       <div style={styles.pSessionMeta}>
-                        F{c.fatigue} · S{c.soreness} · Sl{c.sleep} · St{c.stress} · M{c.mood} · Mt{c.motivation}
+                        {wellnessAbbr(c)}
                       </div>
                     </div>
-                    <div style={{ ...styles.pSessionLoad, color: avg > 4 ? '#c8472b' : '#1a1a1a' }}>
-                      {avg.toFixed(1)}<span style={styles.pUnit}>/7</span>
+                    <div style={{ ...styles.pSessionLoad, color: (avg != null && avg > 4) ? '#c8472b' : '#1a1a1a' }}>
+                      {avg != null ? avg.toFixed(1) : '—'}<span style={styles.pUnit}>/7</span>
                     </div>
                   </div>
                 );

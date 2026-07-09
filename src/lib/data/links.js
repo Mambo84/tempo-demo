@@ -66,3 +66,25 @@ export async function revokeLink(linkId) {
     .eq('id', linkId);
   if (error) throw error;
 }
+
+// Practitioner removes an athlete from their roster by revoking their OWN link
+// (M11 pull-forward). Goes through the revoke_own_link RPC (0015) because a
+// non-admin practitioner can't revoke via a direct update under RLS.
+export async function revokeOwnLink(linkId) {
+  const { error } = await supabase.rpc('revoke_own_link', { p_link_id: linkId });
+  if (error) throw error;
+}
+
+// Athlete fine-tunes a linked user's permissions (M11 pull-forward). The athlete
+// is the owner → has_athlete_admin, so this direct update passes RLS. Replaces the
+// whole permissions JSON with the caller-supplied object. Role is unchanged.
+export async function updateLinkPermissions(linkId, permissions) {
+  const { data, error } = await supabase
+    .from('athlete_user_links')
+    .update({ permissions })
+    .eq('id', linkId)
+    .select('*, profiles:user_id(display_name, title)')
+    .single();
+  if (error) throw error;
+  return rowToLink(data);
+}
