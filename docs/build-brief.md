@@ -607,6 +607,17 @@ favours within-athlete change vs. a personal rolling mean/SD (z-score):
 **Schema implications:** may add a `wellness_baselines` table or cache rolling
 mean/SD on `athletes` (TBD — see schema.md). Not decided until built.
 
+### Post-MVP design task — Composite status vocabulary redesign
+
+**Status:** planned; small design task, not a full milestone.
+
+The composite athlete-status classifier uses "Stable / Monitor / Review / Missing
+Data" while the wellness tier uses "Stable / Elevated / Strained." Both surfacing
+"Stable" on the same card creates a reading collision. Option B (rename the
+composite-status vocabulary, e.g. "OK / Watch / Alert" or similar) is the proper
+fix, deferred until real use surfaces whether the collision actually causes
+reading errors in practice.
+
 ### Milestone 9 — Performance tests + flags
 
 **Goal:** Test results persist. Significant deviation flag works.
