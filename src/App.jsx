@@ -3911,18 +3911,23 @@ function AthleteAccessView({ links, sentInvitations = [], onInvitePractitioner, 
             <div style={{ ...styles.loginLabel, marginBottom: 8 }}>Invitations sent</div>
             {sentInvitations.map(inv => (
               <div key={inv.id} style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 padding: '12px 14px', borderRadius: 12, border: '1px solid #e4ddcf',
                 background: '#fff', marginBottom: 8,
               }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 14 }}>{inv.invitedEmail}</div>
-                  <div style={{ fontSize: 12, opacity: 0.6 }}>
-                    {ROLE_LABELS[inv.role] || inv.role} · pending
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>{inv.invitedEmail}</div>
+                    <div style={{ fontSize: 12, opacity: 0.6 }}>
+                      {ROLE_LABELS[inv.role] || inv.role} · pending
+                    </div>
                   </div>
+                  <button onClick={() => onCancelInvitation(inv.id)}
+                    style={{ ...styles.linkBtn, color: '#c8472b', flexShrink: 0 }}>Cancel</button>
                 </div>
-                <button onClick={() => onCancelInvitation(inv.id)}
-                  style={{ ...styles.linkBtn, color: '#c8472b', flexShrink: 0 }}>Cancel</button>
+                <CopyableLink url={`${window.location.origin}/#invite=${inv.id}`} />
+                <div style={{ fontSize: 11, color: '#8a8275', marginTop: 6 }}>
+                  This link only works for {inv.invitedEmail} — share it however you like; they sign in with that email to accept.
+                </div>
               </div>
             ))}
           </div>
@@ -5900,22 +5905,27 @@ function PractitionerInviteAthlete({ sentInvitations, onInvite, onCancelInvitati
             <div style={{ ...styles.loginLabel, marginBottom: 10 }}>Pending invitations</div>
             {sentInvitations.map(inv => (
               <div key={inv.id} style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 padding: '12px 14px', borderRadius: 12, border: '1px solid #e4ddcf',
                 background: '#fff', marginBottom: 8,
               }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 14 }}>
-                    {inv.athleteName || inv.invitedEmail}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>
+                      {inv.athleteName || inv.invitedEmail}
+                    </div>
+                    <div style={{ fontSize: 12, opacity: 0.6 }}>
+                      {inv.invitedEmail} · {ROLE_LABELS[inv.role] || inv.role} · pending
+                    </div>
                   </div>
-                  <div style={{ fontSize: 12, opacity: 0.6 }}>
-                    {inv.invitedEmail} · {ROLE_LABELS[inv.role] || inv.role} · pending
-                  </div>
+                  <button onClick={() => onCancelInvitation(inv.id)}
+                    style={{ ...styles.linkBtn, color: '#c8472b', flexShrink: 0 }}>
+                    Cancel
+                  </button>
                 </div>
-                <button onClick={() => onCancelInvitation(inv.id)}
-                  style={{ ...styles.linkBtn, color: '#c8472b', flexShrink: 0 }}>
-                  Cancel
-                </button>
+                <CopyableLink url={`${window.location.origin}/#invite=${inv.id}`} />
+                <div style={{ fontSize: 11, color: '#8a8275', marginTop: 6 }}>
+                  This link only works for {inv.invitedEmail} — share it however you like; they sign in with that email to accept.
+                </div>
               </div>
             ))}
           </div>
@@ -12070,6 +12080,13 @@ export default function App() {
   const [recoveryMode, setRecoveryMode] = useState(
     () => typeof window !== 'undefined' && /type=recovery/.test(window.location.hash)
   );
+  // Invite link /#invite=<uuid> — seeded on first paint, same hash-parse pattern as
+  // recoveryMode (no router, no vercel.json change). Gates the InviteAcceptScreen.
+  const [pendingInviteId, setPendingInviteId] = useState(() => {
+    if (typeof window === 'undefined') return null;
+    const m = window.location.hash.match(/invite=([0-9a-fA-F-]{36})/);
+    return m ? m[1] : null;
+  });
   const [auditLog, setAuditLog] = useState([]);
   // Real athlete's own DB profile (M3). Resolved for athlete-role users who came
   // from a real session (i.e. no demo persona athleteId). null = none yet → setup.
@@ -12234,6 +12251,24 @@ export default function App() {
     );
   }
 
+  // Invite link: handle acceptance (logged in or out) before the normal auth gate.
+  if (pendingInviteId) {
+    return (
+      <div style={styles.root}>
+        <style>{globalCSS}</style>
+        <InviteAcceptScreen
+          invitationId={pendingInviteId}
+          session={session}
+          currentUser={currentUser}
+          onDone={() => {
+            setPendingInviteId(null);
+            try { window.history.replaceState(null, '', window.location.pathname); } catch { /* ignore */ }
+          }}
+        />
+      </div>
+    );
+  }
+
   // Real auth gate: no session → login / signup. A persisted session skips this.
   if (!session) {
     return (
@@ -12391,11 +12426,13 @@ function IntroScreen({ onContinue }) {
 // SignupFlow — onboarding for new independent athletes
 // Three-step flow: identity → sport → welcome
 // ============================================================
-function SignupFlow({ onComplete, onCancel }) {
-  const [step, setStep] = useState('who'); // who | identity | sport | role | welcome
-  const [accountType, setAccountType] = useState(null); // 'athlete' | 'staff'
+function SignupFlow({ onComplete, onCancel, initialEmail = '', initialAccountType = null }) {
+  // From an invite link we know the address (locked) and the account type, so we
+  // skip the "who are you" step and start at identity.
+  const [step, setStep] = useState(initialAccountType ? 'identity' : 'who'); // who | identity | sport | role | welcome
+  const [accountType, setAccountType] = useState(initialAccountType); // 'athlete' | 'staff'
   const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState('');
   const [sport, setSport] = useState(null);
   const [staffRole, setStaffRole] = useState(null);
@@ -12561,13 +12598,19 @@ function SignupFlow({ onComplete, onCancel }) {
             <label style={styles.loginLabel}>Email</label>
             <input
               type="email"
-              style={styles.loginInput}
+              style={{ ...styles.loginInput, ...(initialEmail ? { opacity: 0.7, cursor: 'not-allowed' } : {}) }}
               value={email}
               onChange={e => setEmail(e.target.value)}
               placeholder="you@example.com"
               autoCapitalize="off"
               autoCorrect="off"
+              readOnly={!!initialEmail}
             />
+            {initialEmail && (
+              <div style={{ fontSize: 11, color: '#8a8275', marginTop: 4 }}>
+                This invitation was sent to this address. To use a different one, ask for a new invite.
+              </div>
+            )}
           </div>
           <div style={styles.loginField}>
             <label style={styles.loginLabel}>Password</label>
@@ -12784,6 +12827,173 @@ function SignupFlow({ onComplete, onCancel }) {
   return null;
 }
 
+
+// CopyableLink — a shareable URL with a copy button ("Copied!" for ~2s) and a
+// no-clipboard fallback. Truncates long URLs in the middle for mobile display.
+function CopyableLink({ url }) {
+  const [copied, setCopied] = useState(false);
+  const canCopy = typeof navigator !== 'undefined' && !!navigator.clipboard;
+  const shown = url.length <= 44 ? url : `${url.slice(0, 30)}…${url.slice(-12)}`;
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* clipboard blocked — the text is selectable as a fallback */ }
+  };
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+      <code title={url} style={{
+        flex: 1, minWidth: 0, fontSize: 12, background: '#f5f1e8', border: '1px solid #e4ddcf',
+        borderRadius: 8, padding: '6px 10px', overflow: 'hidden', textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap', userSelect: 'all',
+      }}>{shown}</code>
+      {canCopy ? (
+        <button onClick={copy} style={{
+          flexShrink: 0, padding: '6px 12px', borderRadius: 8, border: '1px solid #e0d9c8',
+          background: copied ? '#e8f0e5' : 'transparent', color: copied ? '#3a8a4d' : '#6b6456',
+          fontFamily: 'inherit', fontSize: 12, cursor: 'pointer',
+        }}>{copied ? 'Copied!' : 'Copy link'}</button>
+      ) : (
+        <span style={{ flexShrink: 0, fontSize: 11, color: '#8a8275' }}>Tap &amp; hold to copy</span>
+      )}
+    </div>
+  );
+}
+
+// InviteAcceptScreen — landing for a /#invite=<id> link. Fetches the invite
+// preview, then: signed out → signup (email locked) / login; signed in as the
+// invited email → auto-accept; signed in as someone else → sign out & switch.
+// New athletes hit "create your profile first" from accept_invitation → we release
+// to the app so profile setup + the existing in-app banner complete it.
+function InviteAcceptScreen({ invitationId, session, currentUser, onDone }) {
+  const [preview, setPreview] = useState(undefined); // undefined=loading, null=invalid, obj
+  const [result, setResult] = useState(null);         // null=in-progress, 'done'|'need-profile'|'error'
+  const [authMode, setAuthMode] = useState('signup'); // signup|login (signed out)
+  const [loginPw, setLoginPw] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const myEmail = (currentUser?.email || session?.user?.email || '').toLowerCase();
+  const emailMatches = !!preview && !!myEmail && myEmail === preview.invitedEmail;
+
+  useEffect(() => {
+    let active = true;
+    InvitationsData.getInvitationPreview(invitationId)
+      .then(p => { if (active) setPreview(p); })
+      .catch(() => { if (active) setPreview(null); });
+    return () => { active = false; };
+  }, [invitationId]);
+
+  // Auto-accept once, when signed in as the invited email. setState happens only in
+  // the async callbacks (never synchronously in the effect), so no cascading renders.
+  // Uses the invitation's suggested role/permissions (the RPC coalesces to them);
+  // the practitioner's perms stay adjustable afterward.
+  useEffect(() => {
+    if (!preview || !session || !emailMatches || result) return;
+    let active = true;
+    InvitationsData.acceptInvitation(invitationId)
+      .then(() => { if (active) setResult('done'); })
+      .catch(e => {
+        if (!active) return;
+        if (/create your athlete profile/i.test(e?.message || '')) setResult('need-profile');
+        else { setErr(e?.message || 'Could not accept the invitation.'); setResult('error'); }
+      });
+    return () => { active = false; };
+  }, [preview, session, emailMatches, result, invitationId]);
+
+  const doLogin = async (e) => {
+    e?.preventDefault?.();
+    setErr(null); setBusy(true);
+    const { error } = await signInWithPassword({ email: preview.invitedEmail, password: loginPw });
+    setBusy(false);
+    if (error) setErr(/invalid login/i.test(error.message) ? 'That password is incorrect.' : error.message);
+    // success → the app auth listener sets the session → the accept effect runs.
+  };
+
+  const roleLabel = ROLE_LABELS[preview?.role] || preview?.role || 'a team member';
+  const inviteLine = preview ? `${preview.inviterName} invited you to Tempo as ${roleLabel}.` : '';
+  const note = (text) => (
+    <div style={{ textAlign: 'center', color: '#6b6456', fontSize: 13, margin: '10px 0 18px' }}>{text}</div>
+  );
+  const head = (tag) => (<><div style={styles.loginMark}>◐</div><div style={styles.loginBrand}>tempo</div><div style={styles.loginTagline}>{tag}</div></>);
+
+  if (preview === undefined) {
+    return <div style={styles.loginFrame}><div style={styles.loginInner}>{head('Loading invitation…')}</div></div>;
+  }
+  if (preview === null) {
+    return <div style={styles.loginFrame}><div style={styles.loginInner}>{head('Invitation unavailable')}
+      {note("This invitation isn't available anymore — it may have been accepted, revoked, or expired.")}
+      <button style={styles.loginSubmit} onClick={onDone}>Go to Tempo</button></div></div>;
+  }
+  if (session && emailMatches && result === 'done') {
+    return <div style={styles.loginFrame}><div style={styles.loginInner}>{head("You're in ✓")}
+      {note('Invitation accepted. Welcome to Tempo.')}
+      <button style={styles.loginSubmit} onClick={onDone}>Continue</button></div></div>;
+  }
+  if (session && emailMatches && result === 'need-profile') {
+    return <div style={styles.loginFrame}><div style={styles.loginInner}>{head('One more step')}
+      {note("Set up your athlete profile first — then you'll see this invitation on your home screen to accept.")}
+      <button style={styles.loginSubmit} onClick={onDone}>Set up my profile</button></div></div>;
+  }
+  if (session && emailMatches && result === 'error') {
+    return <div style={styles.loginFrame}><div style={styles.loginInner}>{head("Couldn't accept")}
+      {err && <div style={styles.loginError}>{err}</div>}
+      <button style={{ ...styles.loginSubmit, marginTop: 14 }} onClick={onDone}>Go to Tempo</button></div></div>;
+  }
+  if (session && emailMatches) {  // accept in progress
+    return <div style={styles.loginFrame}><div style={styles.loginInner}>{head('Accepting…')}</div></div>;
+  }
+  if (session && !emailMatches) {
+    return <div style={styles.loginFrame}><div style={styles.loginInner}>{head('Wrong account')}
+      <div style={{ textAlign: 'center', color: '#6b6456', fontSize: 13, margin: '10px 0 18px' }}>
+        This invite was sent to <strong>{preview.invitedEmail}</strong>, but you're signed in as <strong>{myEmail}</strong>.
+      </div>
+      <button style={{ ...styles.loginSubmit, opacity: busy ? 0.6 : 1 }} disabled={busy}
+        onClick={async () => { setBusy(true); await signOut(); setBusy(false); }}>Log out &amp; switch</button></div></div>;
+  }
+  // signed out → need auth
+  if (authMode === 'signup') {
+    return (
+      <div style={styles.loginFrame}><div style={styles.loginInner}>
+        <div style={{ textAlign: 'center', color: '#6b6456', fontSize: 13, marginBottom: 12 }}>{inviteLine}</div>
+        <SignupFlow
+          initialEmail={preview.invitedEmail}
+          initialAccountType={preview.direction === 'athlete_to_practitioner' ? 'staff' : 'athlete'}
+          onComplete={() => { /* auth listener drives the accept */ }}
+          onCancel={() => setAuthMode('login')}
+        />
+        <div style={{ textAlign: 'center', marginTop: 10 }}>
+          <a style={styles.loginLink} onClick={() => setAuthMode('login')}>Already have an account? Log in</a>
+        </div>
+      </div></div>
+    );
+  }
+  return (
+    <div style={styles.loginFrame}><div style={styles.loginInner}>
+      {head('Log in to accept')}
+      {note(inviteLine)}
+      <form onSubmit={doLogin} style={styles.loginForm}>
+        <div style={styles.loginField}>
+          <label style={styles.loginLabel}>Email</label>
+          <input type="email" style={{ ...styles.loginInput, opacity: 0.7 }} value={preview.invitedEmail} readOnly />
+        </div>
+        <div style={styles.loginField}>
+          <label style={styles.loginLabel}>Password</label>
+          <input type="password" autoComplete="current-password" style={styles.loginInput}
+            value={loginPw} onChange={e => setLoginPw(e.target.value)} placeholder="••••••••" />
+        </div>
+        {err && <div style={styles.loginError}>{err}</div>}
+        <button type="submit" style={{ ...styles.loginSubmit, opacity: busy ? 0.6 : 1 }} disabled={busy}>
+          {busy ? 'Signing in…' : 'Log in'}
+        </button>
+        <div style={styles.loginLinks}>
+          <a style={styles.loginLink} onClick={() => setAuthMode('signup')}>Need an account? Sign up</a>
+        </div>
+      </form>
+    </div></div>
+  );
+}
 
 // ResetPasswordScreen — set a new password from a recovery session (reset link).
 function ResetPasswordScreen({ onDone }) {

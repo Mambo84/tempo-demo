@@ -49,6 +49,26 @@ export async function createInvitation(input, inviterUserId) {
   return rowToInvitation(data);
 }
 
+// Public preview of an invitation by id, for the /#invite=<id> landing page (via
+// the get_invitation_preview SECURITY DEFINER RPC — 0017). Readable while logged
+// out so we can pre-fill the invited email + show who invited them. Returns null
+// for an unknown / expired / non-pending id.
+export async function getInvitationPreview(invitationId) {
+  if (!invitationId) return null;
+  const { data, error } = await supabase.rpc('get_invitation_preview', { p_invitation_id: invitationId });
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) return null;
+  return {
+    invitedEmail: (row.invited_email || '').toLowerCase(),
+    inviterName: row.inviter_name || 'Someone',
+    inviterTitle: row.inviter_title || '',
+    role: row.role,
+    athleteName: row.athlete_name || null,
+    direction: row.direction || 'practitioner_to_athlete',
+  };
+}
+
 // The practitioner's own pending invitations (for the "Pending invitations" list).
 export async function listSentInvitations(inviterUserId) {
   if (!inviterUserId) return [];
