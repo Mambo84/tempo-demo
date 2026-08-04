@@ -6312,6 +6312,25 @@ function PractitionerApp({ currentUser, isRealPractitioner, auditLog, recordAudi
     }));
   };
 
+  // Practitioner-entered session (create-only — no edit path, by design).
+  // RLS: the workouts INSERT policy requires `edit_workouts` on this athlete
+  // (0004_training_data.sql), so a practitioner without it is rejected server-side
+  // too — the UI gate on the button is convenience, not the security boundary.
+  const saveWorkout = async (athleteId, w) => {
+    if (isRealPractitioner) {
+      try {
+        const created = await WorkoutsData.createWorkout(athleteId, w, currentUser?.id);
+        setWorkouts(prev => [created, ...prev]);
+        showToast('Session saved');
+      } catch (e) {
+        console.error('saveWorkout', e);
+        showToast('Could not save session');
+      }
+      return;
+    }
+    setWorkouts(prev => [{ ...w, id: `w_${Date.now()}`, athleteId }, ...prev]);
+  };
+
   const addTest = (t) => {
     const newTest = { ...t, id: `t_${Date.now()}` };
     setTests([newTest, ...tests]);
@@ -6556,7 +6575,7 @@ function PractitionerApp({ currentUser, isRealPractitioner, auditLog, recordAudi
   const perfData = {
     injuries, tests, concussionBaselines, concussionIncidents, files, workouts,
     addInjury, updateInjury, toggleRtpStage, addTest, addBaseline, addConcussionIncident, addFile,
-    mergeUploadedSessions
+    mergeUploadedSessions, saveWorkout
   };
 
   if (showPrivacy) {
@@ -9201,6 +9220,7 @@ function AthleteDetail({ row, notes, onAddNote, perfData, currentUser, links, re
   const [tab, setTab] = useState('overview');
   const [showMedical, setShowMedical] = useState(false); // toggle for medical-restricted view
   const [confirmRemove, setConfirmRemove] = useState(false); // "Remove athlete" confirmation
+  const [showAddSession, setShowAddSession] = useState(false); // practitioner session entry
   const { athlete, weekly, acwr, mon, wellAvg, workouts, checkins } = row;
   const strain = calc.strain(workouts, today());
 
@@ -9212,6 +9232,7 @@ function AthleteDetail({ row, notes, onAddNote, perfData, currentUser, links, re
   const canEditNotes = can('edit_notes');
   const canInjuries = can('view_injuries');
   const canReports = can('view_reports');
+  const canEditWorkouts = can('edit_workouts');
 
   // 28-day chronic chart
   const chronicDays = [];
@@ -9382,6 +9403,24 @@ function AthleteDetail({ row, notes, onAddNote, perfData, currentUser, links, re
 
       {tab === 'workload' && (
         <div style={styles.pDetailBody}>
+          {/* Session entry — only for practitioners the athlete has granted
+              edit_workouts (Gap 1 lets them grant it without re-inviting). */}
+          {canEditWorkouts && (
+            <div style={{ marginBottom: 14 }}>
+              {showAddSession ? (
+                <PractitionerLogSession
+                  athleteName={athlete.name}
+                  onSave={async (w) => { await perfData.saveWorkout(athlete.id, w); setShowAddSession(false); }}
+                  onCancel={() => setShowAddSession(false)}
+                />
+              ) : (
+                <button style={styles.perfAddBtn} onClick={() => setShowAddSession(true)}>
+                  + Add session
+                </button>
+              )}
+            </div>
+          )}
+
           <div style={styles.pChartCard}>
             <div style={styles.pChartHead}>
               <span style={styles.pChartLabel}>Session log</span>
@@ -9720,7 +9759,12 @@ function GpsWidget({ workouts, onView }) {
   const totalHighSpeed = recent.reduce((s, w) => s + (w.highSpeedDistanceM || 0), 0);
   const totalSprintDist = recent.reduce((s, w) => s + (w.sprintDistanceM || 0), 0);
   const totalSprints = recent.reduce((s, w) => s + (w.sprintEfforts || 0), 0);
-  const totalDurationMin = recent.reduce((s, w) => s + (w.durationMin || 0), 0);
+  // `duration`, not `durationMin`: nothing in the app produces a `durationMin` key
+  // on a workout — the DB mapper emits `duration` (workouts.js), the seed uses
+  // `duration`, and the CSV importer converts its own `row.durationMin` to
+  // `duration` on creation. `durationMin` is only the importer's column-mapping
+  // name, so this tile silently read 0 for every session before the fix.
+  const totalDurationMin = recent.reduce((s, w) => s + (w.duration || 0), 0);
   const totalHours = Math.floor(totalDurationMin / 60);
   const totalRemainingMin = Math.round(totalDurationMin % 60);
   const maxVel = Math.max(0, ...recent.map(w => w.maxVelocityMps || 0));
@@ -11137,6 +11181,152 @@ function GpsUploadWizard({ mode, athletes, athleteId, onSave, onCancel }) {
 }
 
 
+// ============================================================
+// PractitionerLogSession — practitioner-side session entry
+// ============================================================
+// Create-only by design. General practitioner-side workout *editing* stays
+// deferred (Brad's call): building it "because we now write GPS" is scope creep.
+// A mis-entry is corrected in Supabase until the general edit path is real, so
+// this form never takes an `existing`.
+//
+// GPS / external load sits in its own collapsed section rather than an "advanced
+// details" bucket: it shares the category name with the athlete-side GpsWidget
+// (same words on both sides), and it's the container that grows — Catapult
+// import, accels/decels, HR and distance zones all belong here later.
+function PractitionerLogSession({ athleteName, onSave, onCancel }) {
+  const [date, setDate] = useState(today());
+  const [type, setType] = useState('Team Training');
+  const [duration, setDuration] = useState(60);
+  const [rpe, setRpe] = useState(5);
+  const [note, setNote] = useState('');
+
+  // GPS fields are held as strings so an untouched input stays empty rather than
+  // becoming 0 — `workoutToRow`'s num() maps '' → undefined, which omits the key
+  // entirely, leaving the column NULL instead of writing a fake zero.
+  const [distanceM, setDistanceM] = useState('');
+  const [highSpeedDistanceM, setHighSpeedDistanceM] = useState('');
+  const [sprintEfforts, setSprintEfforts] = useState('');
+  const [maxVelocityKmh, setMaxVelocityKmh] = useState('');
+  const [playerLoad, setPlayerLoad] = useState('');
+  const [avgHr, setAvgHr] = useState('');
+  const [gpsOpen, setGpsOpen] = useState(false);
+
+  const types = ['Run', 'Strength', 'Team Training', 'Match', 'Cycle', 'Swim', 'Other'];
+
+  const gpsFields = [
+    { label: 'Distance (m)',            value: distanceM,           set: setDistanceM,           step: '1',    placeholder: 'e.g. 7400' },
+    { label: 'High-speed distance (m)', value: highSpeedDistanceM,  set: setHighSpeedDistanceM,  step: '1',    placeholder: 'e.g. 620' },
+    { label: 'Sprint efforts',          value: sprintEfforts,       set: setSprintEfforts,       step: '1',    placeholder: 'e.g. 14' },
+    { label: 'Max velocity (km/h)',     value: maxVelocityKmh,      set: setMaxVelocityKmh,      step: '0.1',  placeholder: 'e.g. 31.4' },
+    { label: 'Player load',             value: playerLoad,          set: setPlayerLoad,          step: '0.1',  placeholder: 'e.g. 412.5' },
+    { label: 'Average HR (bpm)',        value: avgHr,               set: setAvgHr,               step: '1',    placeholder: 'e.g. 148' },
+  ];
+
+  // Drives the header chip so a collapsed section never hides the fact it's filled.
+  const hasGps = gpsFields.some(f => f.value !== '');
+
+  const numOrUndef = (v) => (v === '' ? undefined : Number(v));
+
+  // Duration is a free number input (not LogWorkout's chip row), so a cleared
+  // field would otherwise save as Number('') === 0 and zero out session_load.
+  const durationValid = duration !== '' && Number(duration) > 0;
+
+  const handleSave = () => {
+    if (!durationValid) return;
+    onSave({
+      date,
+      type,
+      duration: Number(duration),
+      rpe: Number(rpe),
+      note,
+      source: 'practitioner',
+      distanceM: numOrUndef(distanceM),
+      highSpeedDistanceM: numOrUndef(highSpeedDistanceM),
+      sprintEfforts: numOrUndef(sprintEfforts),
+      // The input is km/h (what Catapult OpenField exports and what staff read off
+      // a device); the UI shape holds m/s and workoutToRow converts back ×3.6 for
+      // the max_velocity_kmh column. Rounded to 2dp to match the CSV importer's
+      // existing km/h→m/s conversion so both entry paths store the same precision.
+      maxVelocityMps: maxVelocityKmh === '' ? undefined : +(Number(maxVelocityKmh) / 3.6).toFixed(2),
+      playerLoad: numOrUndef(playerLoad),
+      avgHr: numOrUndef(avgHr),
+    });
+  };
+
+  return (
+    <div style={styles.perfFormCard}>
+      <div style={styles.perfFormTitle}>Log session{athleteName ? ` — ${athleteName}` : ''}</div>
+
+      <FormField label="Date">
+        <input type="date" style={styles.perfInput} value={date} max={today()}
+          onChange={e => setDate(e.target.value)} />
+      </FormField>
+
+      <FormField label="Activity">
+        <div style={styles.perfBtnRow}>
+          {types.map(t => (
+            <button key={t} onClick={() => setType(t)}
+              style={{ ...styles.perfPillBtn, ...(type === t ? styles.perfPillBtnActive : {}) }}>
+              {t}
+            </button>
+          ))}
+        </div>
+      </FormField>
+
+      <FormField label="Duration (minutes)">
+        <input type="number" min="0" step="1" style={styles.perfInput} value={duration}
+          onChange={e => setDuration(e.target.value)} />
+      </FormField>
+
+      <FormField label="RPE (0–10)">
+        <div style={styles.perfBtnRow}>
+          {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
+            <button key={n} onClick={() => setRpe(n)}
+              style={{ ...styles.perfPillBtn, ...(Number(rpe) === n ? styles.perfPillBtnActive : {}) }}>
+              {n}
+            </button>
+          ))}
+        </div>
+      </FormField>
+
+      <CollapsibleSection
+        title="GPS / External load"
+        kicker="OPTIONAL"
+        badge={hasGps ? '🛰️ Recorded' : null}
+        open={gpsOpen}
+        onToggle={() => setGpsOpen(!gpsOpen)}
+      >
+        {gpsFields.map(f => (
+          <FormField key={f.label} label={f.label}>
+            <input type="number" min="0" step={f.step} style={styles.perfInput}
+              value={f.value} placeholder={f.placeholder}
+              onChange={e => f.set(e.target.value)} />
+          </FormField>
+        ))}
+        <div style={styles.perfFormHint}>
+          Leave blank if not recorded. Blank fields stay empty — they aren't saved as zero.
+        </div>
+      </CollapsibleSection>
+
+      <FormField label="Note">
+        <textarea style={styles.perfTextarea} rows="2" value={note}
+          onChange={e => setNote(e.target.value)} placeholder="Optional" />
+      </FormField>
+
+      <div style={styles.perfFormActions}>
+        <button style={styles.perfCancelBtn} onClick={onCancel}>Cancel</button>
+        <button
+          style={{ ...styles.perfSaveBtn, ...(durationValid ? {} : styles.perfSaveBtnDisabled) }}
+          onClick={handleSave}
+          disabled={!durationValid}
+        >
+          Save session
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function InjuryForm({ athleteId, onSave, onCancel, existing = null, canMedical = true }) {
   const isEdit = !!existing;
   // Core — prefilled from `existing` when editing (e.g. a practitioner classifying
@@ -11450,7 +11640,10 @@ function InjuryForm({ athleteId, onSave, onCancel, existing = null, canMedical =
   );
 }
 
-function CollapsibleSection({ title, kicker, open, onToggle, children }) {
+// `badge` renders a chip on the right of the header — used to surface that a
+// collapsed section holds data (e.g. "🛰️ Recorded" on GPS / external load), so
+// the section can default closed without hiding the fact that it's populated.
+function CollapsibleSection({ title, kicker, badge, open, onToggle, children }) {
   return (
     <div style={styles.collapseSection}>
       <button onClick={onToggle} style={styles.collapseHead}>
@@ -11458,11 +11651,14 @@ function CollapsibleSection({ title, kicker, open, onToggle, children }) {
           {kicker && <div style={styles.collapseKicker}>{kicker}</div>}
           <div style={styles.collapseTitle}>{title}</div>
         </div>
-        <ChevronRight
-          size={16}
-          color="#8a8275"
-          style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}
-        />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {badge && <span style={styles.collapseBadge}>{badge}</span>}
+          <ChevronRight
+            size={16}
+            color="#8a8275"
+            style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}
+          />
+        </div>
       </button>
       {open && (
         <div style={styles.collapseBody}>
@@ -16307,6 +16503,9 @@ const styles = {
     fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase',
     color: '#5a564d', fontWeight: 600
   },
+  perfFormHint: {
+    fontSize: 11, lineHeight: 1.5, color: '#8a8275', marginTop: 2
+  },
   perfFormActions: {
     display: 'flex', gap: 10, marginTop: 8
   },
@@ -16321,6 +16520,9 @@ const styles = {
     border: 'none', borderRadius: 8, padding: '12px',
     fontSize: 13, fontWeight: 600, letterSpacing: '0.04em',
     cursor: 'pointer', fontFamily: 'inherit'
+  },
+  perfSaveBtnDisabled: {
+    opacity: 0.4, cursor: 'not-allowed'
   },
   perfSelect: {
     width: '100%', padding: '10px 12px',
@@ -16525,6 +16727,12 @@ const styles = {
     alignItems: 'center', padding: '12px 14px',
     background: 'transparent', border: 'none', cursor: 'pointer',
     textAlign: 'left', fontFamily: 'inherit'
+  },
+  collapseBadge: {
+    fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase',
+    color: '#5a564d', fontWeight: 600, whiteSpace: 'nowrap',
+    background: '#f0ece2', border: '1px solid #e0dbd0',
+    borderRadius: 999, padding: '3px 9px'
   },
   collapseKicker: {
     fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase',
